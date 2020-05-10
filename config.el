@@ -62,3 +62,5 @@
   (setq lsp-pyls-plugins-yapf-enabled t)
   (setq lsp-pyls-plugins-pyflakes-enabled nil)
 )
+
+(setq doom-localleader-key ",")

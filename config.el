@@ -7,7 +7,7 @@
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets.
 (setq user-full-name "Samuel Blumenthal"
-      user-mail-address "sblumenthal@medallia.com")
+      user-mail-address "sam.sam.42@gmail.com")
 
 ;; Doom exposes five (optional) variables for controlling fonts in Doom. Here
 ;; are the three important ones:
@@ -32,7 +32,7 @@
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
-(setq display-line-numbers-type t)
+(setq display-line-numbers-type 'relative)
 
 
 ;; Here are some additional functions/macros that could help you configure Doom:
@@ -63,22 +63,13 @@
       :desc "Calc" "a c" #'calc)
 
 
-(setq python-python-command "/Users/sblumenthal/.pyenv/shims/python")
-
 
 (setq org-agenda-files '("~/agenda/")
       org-refile-use-outline-path 'file
       org-outline-path-complete-in-steps nil)
 
-;; (use-package! lsp-python-ms
-;;   :init (setq lsp-python-ms-executable
-;;               "~/python-language-server/output/bin/Release/osx-x64/publish/Microsoft.Python.LanguageServer")
-;;   :hook (python-mode . (lambda ()
-;;                          (require 'lsp-python-ms)
-;;                          (lsp))))
 
 ; Fix airflow dags path
-;; (add-to-list 'lsp-python-ms-extra-paths "/Users/sblumenthal/workplace/athena-scheduler/dags/")
 
 (add-hook 'python-mode-hook #'(lambda () (electric-indent-mode -1)))
 
@@ -88,10 +79,6 @@
 
 (setq max-specpdl-size 13000)
 (setq conda-anaconda-home "$HOME/miniconda3/")
-
-; Set conda envs are venv home
-(setenv "WORKON_HOME" "/Users/sblumenthal/miniconda3/envs")
-(pyvenv-mode 1)
 
 ; Fix company-lsp result order
 (add-hook 'python-mode-hook (lambda () (setq company-lsp-cache-candidates nil)))
@@ -109,3 +96,32 @@
 (setq doom-localleader-key ",")
 
 (add-to-list '+format-on-save-enabled-modes 'web-mode t)
+(setenv "PATH" (concat "/home/sam/.local/bin/:/home/sam/.poetry/bin/:" (getenv "PATH")))
+(add-to-list 'exec-path "/home/sam/.local/bin/")
+(add-to-list 'exec-path "/home/sam/.poetry/bin/")
+
+
+(load! "+bindings")
+
+;; emacs/eshell
+(after! eshell
+  (set-eshell-alias!
+   "f"   "find-file $1"
+   "l"   "ls -lh"
+   "d"   "dired $1"
+   "gl"  "(call-interactively 'magit-log-current)"
+   "gs"  "magit-status"
+   "gc"  "magit-commit"
+   "rg"  "rg --color=always $*"))
+
+;; (use-package! fira-code-mode
+;;   :hook prog-mode)
+
+(use-package! blacken
+  :init
+  (setq blacken-executable "~/.local/bin/black"))
+
+(add-hook 'clojure-mode-hook (lambda () (lispy-mode -1)))
+(add-hook 'clojure-mode-hook (lambda () (paredit-mode 1)))
+
+(global-undo-tree-mode 1)

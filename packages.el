@@ -48,3 +48,4 @@
 (package! conda)
 (package! blacken)
 (package! fira-code-mode)
+(package! protobuf-mode)

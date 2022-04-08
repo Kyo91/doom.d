@@ -85,13 +85,6 @@
 
 (setq display-line-numbers-type 'relative)
 
-(use-package! lsp-mode
-  :init
-  (setq lsp-pyls-plugins-pylint-enabled t)
-  (setq lsp-pyls-plugins-autopep8-enabled nil)
-  (setq lsp-pyls-plugins-yapf-enabled t)
-  (setq lsp-pyls-plugins-pyflakes-enabled nil)
-)
 
 (setq doom-localleader-key ",")
 
@@ -124,4 +117,40 @@
 (add-hook 'clojure-mode-hook (lambda () (lispy-mode -1)))
 (add-hook 'clojure-mode-hook (lambda () (paredit-mode 1)))
 
-(global-undo-tree-mode 1)
+
+;; ;; Elixir LSP over tramp
+;; (lsp-register-client
+;;  (make-lsp-client :new-connection (lsp-tramp-connection
+;;                                    (lambda ()
+;;                                      `(,(or (executable-find
+;;                                             (cl-first lsp-elixir-server-command))
+;;                                            (lsp-package-path 'elixir-ls))
+;;                                        ,@(cl-rest lsp-elixir-server-command))))
+;;                   :major-modes '(elixir-mode)
+;;                   :priority -1
+;;                   :server-id 'elixir-ls
+;;                   :remote? t
+;;                   :action-handlers (ht ("elixir.lens.test.run" 'lsp-elixir--run-test))
+;;                   :initialized-fn (lambda (workspace)
+;;                                     (with-lsp-workspace workspace
+;;                                       (lsp--set-configuration
+;;                                        (lsp-configuration-section "elixirLS")))
+;;                                     (puthash
+;;                                      "textDocumentSync"
+;;                                      (ht ("save" t)
+;;                                          ("change" 2))
+;;                                      (lsp--workspace-server-capabilities workspace)))))
+
+(use-package! protobuf-mode)
+
+(plist-put! +ligatures-extra-symbols
+            :true nil
+            :false nil
+            :str nil
+            :bool nil
+            :list nil)
+
+;; 10min cache expiry on remote projects (default 5min)
+(setq projectile-file-exists-remote-cache-expire (* 10 60))
+
+(setq mac-command-modifier 'super)

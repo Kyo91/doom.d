@@ -15,8 +15,3 @@
  :i "C-f" #'forward-char
  :i "C-b" #'backward-char
  :i "C-x C-s" #'save-buffer)
-
-;; Python commands
-(map! :localleader
-      :map python-mode-map
-      :desc "Poetry" :nvi "p" #'poetry)

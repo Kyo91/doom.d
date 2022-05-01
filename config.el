@@ -125,3 +125,9 @@
 (add-hook 'clojure-mode-hook (lambda () (paredit-mode 1)))
 
 (global-undo-tree-mode 1)
+
+;; Lisp settings
+(setq
+ sly-complete-symbol-function 'sly-flex-completions
+ inferior-lisp-program "/usr/local/bin/ros -Q run"
+ )

@@ -2,12 +2,34 @@
 
 ;; Place your private configuration here! Remember, you do not need to run 'doom
 ;; sync' after modifying this file!
+(defvar emacs-env "EMACS_ENV" "Environment variable used by emacs to determine the current environment.")
+(defun sym-str-eq (a b)
+  (or
+   (and (stringp a) (stringp b) (string= a b))
+   (and (symbolp a) (symbolp b) (eql a b))
+   (and (stringp a) (symbolp b) (string= a (symbol-name b)))
+   (and (symbolp a) (stringp b) (string= (symbol-name a) b))))
+(defun flex-member (elt list comparison)
+  (when list
+    (if (funcall comparison elt (car list))
+        t
+      (flex-member elt (cdr list) comparison))))
 
+(defmacro on-env (env-or-env-list body)
+  (declare (indent defun))
+  (let* ((env (getenv emacs-env)))
+    `(when (or (sym-str-eq ,env ,env-or-env-list)
+               (and (listp ,env-or-env-list) (flex-member ,env ,env-or-env-list 'sym-str-eq)))
+       ,body)))
 
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets.
-(setq user-full-name "Samuel Blumenthal"
-      user-mail-address "sam.sam.42@gmail.com")
+(on-env 'linux
+  (setq user-full-name "Samuel Blumenthal"
+        user-mail-address "sam.sam.42@gmail.com"))
+(on-env 'osx
+  (setq user-full-name "Samuel Blumenthal"
+        user-mail-address "sblumenthal@drw.com"))
 
 ;; Doom exposes five (optional) variables for controlling fonts in Doom. Here
 ;; are the three important ones:
@@ -143,14 +165,21 @@
 
 (use-package! protobuf-mode)
 
-(plist-put! +ligatures-extra-symbols
-            :true nil
-            :false nil
-            :str nil
-            :bool nil
-            :list nil)
+(on-env 'osx
+  (plist-put! +ligatures-extra-symbols
+              :true nil
+              :false nil
+              :str nil
+              :bool nil
+              :list nil))
 
 ;; 10min cache expiry on remote projects (default 5min)
-(setq projectile-file-exists-remote-cache-expire (* 10 60))
+(on-env 'osx
+  (setq projectile-file-exists-remote-cache-expire (* 10 60)))
 
 (setq mac-command-modifier 'super)
+
+(after! org
+  (add-to-list
+   'org-capture-templates
+   '("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i %a \nCreated at: %T" :prepend t)))

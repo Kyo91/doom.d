@@ -116,6 +116,7 @@
 (add-to-list 'exec-path "/home/sam/.poetry/bin/")
 
 
+(load! "misc")
 (load! "+bindings")
 
 ;; emacs/eshell
@@ -147,3 +148,6 @@
    ))
 
 (setq org-roam-directory "~/agenda/roam/")
+
+(setq deft-directory "~/agenda/"
+      deft-recursive t)

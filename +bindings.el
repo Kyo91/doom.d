@@ -5,6 +5,7 @@
       :desc "Shell Command" :n "!" #'shell-command
       :desc "Jump" :nv "j" #'avy-goto-char-timer
       :desc "(Rip)grep" :n "pg" #'counsel-rg
+      :desc "Project Agenda" :nv "pa" #'kyo/open-project-agenda
       (:desc "elisp" :prefix "e"
         :desc "defun" :n "f" #'eval-defun)
       (:desc "apps" :prefix "a"

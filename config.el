@@ -132,6 +132,21 @@
 
 ;; (use-package! fira-code-mode
 ;;   :hook prog-mode)
+;;
+(on-env 'osx
+  (plist-put! +ligatures-extra-symbols
+              :true nil
+              :false nil
+              :str nil
+              :bool nil
+              :list nil))
+(on-env 'osx
+  (setq projectile-file-exists-remote-cache-expire (* 10 60)))
+
+(after! org
+  (add-to-list
+   'org-capture-templates
+   '("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i %a \nCreated at: %T" :prepend t)))
 
 (use-package! blacken
   :init
@@ -147,7 +162,19 @@
    inferior-lisp-program "/usr/local/bin/ros -Q run"
    ))
 
-(setq org-roam-directory "~/agenda/roam/")
-
 (setq deft-directory "~/agenda/"
       deft-recursive t)
+
+(setq org-roam-directory "~/agenda/roam/"
+      org-roam-capture-templates '(("d" "default" plain "%?"
+                                    :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org"
+                                                       "#+title: ${title}\n")
+                                    :unnarrowed t)
+                                   ("w" "work" plain "%?"
+                                    :target (file+head "work/%<%Y%m%d%H%M%S>-${slug}.org"
+                                                       "#+title: ${title}\n")
+                                    :unnarrowed t)
+                                   ("p" "placeholder" plain "Placeholder for ${title}"
+                                    :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org"
+                                                       "#+title: ${title}\n")
+                                    :immediate-finish t)))

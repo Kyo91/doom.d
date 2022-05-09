@@ -135,11 +135,11 @@
 ;;
 (on-env 'osx
   (plist-put! +ligatures-extra-symbols
-              :true nil
-              :false nil
-              :str nil
-              :bool nil
-              :list nil))
+              :true "⊤"
+              :false "⊥"
+              :str "Ꮥ"
+              :bool "ℬ"
+              :list "ℒ"))
 (on-env 'osx
   (setq projectile-file-exists-remote-cache-expire (* 10 60)))
 
@@ -174,7 +174,26 @@
                                     :target (file+head "work/%<%Y%m%d%H%M%S>-${slug}.org"
                                                        "#+title: ${title}\n")
                                     :unnarrowed t)
+                                   ("q" "quote" plain "#+begin_quote\n%?\n#+end_quote"
+                                    :target (file+head "work/%<%Y%m%d%H%M%S>-${slug}.org"
+                                                       "#+title: ${title}\n")
+                                    :unnarrowed t)
                                    ("p" "placeholder" plain "Placeholder for ${title}"
                                     :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org"
                                                        "#+title: ${title}\n")
                                     :immediate-finish t)))
+
+(use-package! websocket
+    :after org-roam)
+
+(use-package! org-roam-ui
+    :after org-roam ;; or :after org
+;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
+;;         a hookable mode anymore, you're advised to pick something yourself
+;;         if you don't care about startup time, use
+    :hook (after-init . org-roam-ui-mode)
+    :config
+    (setq org-roam-ui-sync-theme t
+          org-roam-ui-follow t
+          org-roam-ui-update-on-save t
+          org-roam-ui-open-on-start t))

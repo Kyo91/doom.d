@@ -49,3 +49,6 @@
 (package! blacken)
 (package! fira-code-mode)
 (package! protobuf-mode)
+
+(unpin! org-roam)
+(package! org-roam-ui)

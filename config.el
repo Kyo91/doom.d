@@ -197,3 +197,6 @@
           org-roam-ui-follow t
           org-roam-ui-update-on-save t
           org-roam-ui-open-on-start t))
+
+(on-env 'linux
+     (pixel-scroll-precision-mode))

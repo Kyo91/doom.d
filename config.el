@@ -26,7 +26,7 @@
 ;; clients, file templates and snippets.
 (on-env 'linux
   (setq user-full-name "Samuel Blumenthal"
-        user-mail-address "sam.sam.42@gmail.com"))
+        user-mail-address "me@itsleg.day"))
 (on-env 'osx
   (setq user-full-name "Samuel Blumenthal"
         user-mail-address "sblumenthal@drw.com"))

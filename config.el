@@ -42,7 +42,7 @@
 ;; They all accept either a font-spec, font string ("Input Mono-12"), or xlfd
 ;; font string. You generally only need these two:
 ;; (font-spec :family "monospace" :size 14) ; Default
-(on-env 'osx (setq doom-font (font-spec :family "Fira Code" :size 12 :weight 'Retina)))
+(on-env 'osx (setq doom-font (font-spec :family "Fira Code" :size 12)))
 
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the

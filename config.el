@@ -93,7 +93,7 @@
       org-outline-path-complete-in-steps nil)
 
 
-; Fix airflow dags path
+                                        ; Fix airflow dags path
 
 (add-hook 'python-mode-hook #'(lambda () (electric-indent-mode -1)))
 
@@ -104,7 +104,7 @@
 (setq max-specpdl-size 13000)
 (setq conda-anaconda-home "$HOME/miniconda3/")
 
-; Fix company-lsp result order
+                                        ; Fix company-lsp result order
 (add-hook 'python-mode-hook (lambda () (setq company-lsp-cache-candidates nil)))
 
 (setq display-line-numbers-type 'relative)
@@ -112,7 +112,6 @@
 
 (setq doom-localleader-key ",")
 
-(add-to-list '+format-on-save-enabled-modes 'web-mode t)
 (setenv "PATH" (concat "/home/sam/.local/bin/:/home/sam/.poetry/bin/:" (getenv "PATH")))
 (add-to-list 'exec-path "/home/sam/.local/bin/")
 (add-to-list 'exec-path "/home/sam/.poetry/bin/")
@@ -186,21 +185,42 @@
                                                        "#+title: ${title}\n")
                                     :immediate-finish t)))
 
+(after! org-roam
+  (setq org-roam-list-files-commands '(find fd fdfind rg)))
 
 (use-package! websocket
   :after org-roam)
 
 (use-package! org-roam-ui
-    :after org-roam ;; or :after org
-;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
-;;         a hookable mode anymore, you're advised to pick something yourself
-;;         if you don't care about startup time, use
-    :hook (after-init . org-roam-ui-mode)
-    :config
-    (setq org-roam-ui-sync-theme t
-          org-roam-ui-follow t
-          org-roam-ui-update-on-save t
-          org-roam-ui-open-on-start t))
+  :after org-roam ;; or :after org
+  ;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
+  ;;         a hookable mode anymore, you're advised to pick something yourself
+  ;;         if you don't care about startup time, use
+  :hook (after-init . org-roam-ui-mode)
+  :config
+  (setq org-roam-ui-sync-theme t
+        org-roam-ui-follow t
+        org-roam-ui-update-on-save t
+        org-roam-ui-open-on-start t))
 
-(on-env 'linux
-     (pixel-scroll-precision-mode))
+(pixel-scroll-precision-mode)
+
+(on-env 'osx
+  (setq lsp-eslint-server-command '("yarn" "run" "eslint" "--stdin")))
+
+;; (setq lsp-log-io t)
+;; (setq lsp-response-timeout 60)
+
+(after! scala-mode
+  (setq scala-indent:use-javadoc-style nil
+        lsp-metals-server-command "metals"))
+
+(setq
+ projectile-project-root-files-functions '(projectile-root-local
+                                           projectile-root-top-down
+                                           projectile-root-top-down-recurring
+                                           projectile-root-bottom-up))
+
+(use-package! jsonnet-mode
+  :defer t
+  )

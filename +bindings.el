@@ -6,10 +6,10 @@
       :desc "Jump" :nv "j" #'avy-goto-char-timer
       :desc "(Rip)grep" :n "pg" #'counsel-rg
       :desc "Project Agenda" :nv "pa" #'kyo/open-project-agenda
-      (:desc "elisp" :prefix "e"
-        :desc "defun" :n "f" #'eval-defun)
+      ;; (:desc "elisp" :prefix "e"
+      ;;   :desc "defun" :n "f" #'eval-defun)
       (:desc "apps" :prefix "a"
-        :desc "Calc" :n "c" #'calc))
+       :desc "Calc" :n "c" #'calc))
 
 ;; Emacs style forwards/backwards in insert mode
 (map!

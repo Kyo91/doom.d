@@ -1,0 +1,13 @@
+# -*- mode: snippet -*-
+# name: Weekly Status Update
+# key: status
+# --
+
+Next State
+$1
+
+Current State
+$2
+
+Blockers
+${3:N/A}

@@ -1,0 +1,36 @@
+# -*- mode: snippet -*-
+# name: Weekly Summary
+# key: week
+# --
+
+* ${1:`(format-time-string "%b %d %Y" (current-time))`}
+** sblumenthal
+*** Previous Week
+  - $0
+*** Current Week
+  -
+** eegonmwan
+*** Previous Week
+  -
+*** Current Week
+  -
+** vdoilova
+*** Previous Week
+  -
+*** Current Week
+  -
+** btan
+*** Previous Week
+  -
+*** Current Week
+  -
+** jswaine
+*** Previous Week
+  -
+*** Current Week
+  -
+** jicheng
+*** Previous Week
+  -
+*** Current Week
+  -

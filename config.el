@@ -101,7 +101,6 @@
 (remove-hook 'markdown-mode-hook #'auto-fill-mode)
 (remove-hook 'text-mode-hook #'auto-fill-mode)
 
-(setq max-specpdl-size 13000)
 (setq conda-anaconda-home "$HOME/miniconda3/")
 
                                         ; Fix company-lsp result order
@@ -215,6 +214,10 @@
   (setq scala-indent:use-javadoc-style nil
         lsp-metals-server-command "metals"))
 
+(use-package! lsp-metals
+  :config
+  (setq lsp-metals-server-args '("-J-Dmetals.startMcpServer=true" "-J-Dmetals.mcpClient=claude")))
+
 (setq
  projectile-project-root-files-functions '(projectile-root-local
                                            projectile-root-top-down
@@ -224,3 +227,44 @@
 (use-package! jsonnet-mode
   :defer t
   )
+
+(defun shou/fix-apheleia-project-dir (orig-fn &rest args)
+  (let ((project (project-current)))
+    (if (not (null project))
+        (let ((default-directory (project-root project))) (apply orig-fn args))
+      (apply orig-fn args))))
+
+(advice-add 'apheleia-format-buffer :around #'shou/fix-apheleia-project-dir)
+
+
+(defun build-image (dev-build)
+  (interactive "sDEV_BUILD=")
+  (let* ((default-directory (project-root (project-current t)))
+         (compilation-environment (list (concat "DEV_BUILD=" dev-build)))
+         (build-command (format "~/bin/dev-image.sh %s" dev-build)))
+    (message (car compilation-environment))
+    (compile build-command)))
+
+(setq compilation-scroll-output t)
+(setq magit-list-refs-sortby "-creatordate")
+
+(add-to-list '+format-on-save-disabled-modes 'python-mode)
+
+(use-package! claude-code-ide
+  :bind ("C-c C-'" . claude-code-ide-menu)
+  :config (claude-code-ide-emacs-tools-setup)
+  (setq claude-code-ide-vterm-render-delay 0.01)
+  )
+
+(use-package! acp)
+(use-package! agent-shell
+  :ensure-system-package
+  ((claude . "brew install claude-code")
+   (claude-agent-acp . "npm install -g @agentclientprotocol/claude-agent-acp"))
+  :config
+  (require 'acp)
+  (require 'agent-shell)
+  (setq agent-shell-anthropic-authentication (agent-shell-anthropic-make-authentication :login t)))
+
+(use-package! agent-shell-sidebar :after agent-shell)
+(use-package! agent-shell-org-transcript :after agent-shell)

@@ -108,9 +108,6 @@
 
 (setq conda-anaconda-home "$HOME/miniconda3/")
 
-                                        ; Fix company-lsp result order
-(add-hook 'python-mode-hook (lambda () (setq company-lsp-cache-candidates nil)))
-
 (setq display-line-numbers-type 'relative)
 
 
@@ -206,19 +203,13 @@
 
 (pixel-scroll-precision-mode)
 
-(on-env 'osx
-  (setq lsp-eslint-server-command '("yarn" "run" "eslint" "--stdin")))
-
-;; (setq lsp-log-io t)
-;; (setq lsp-response-timeout 60)
-
 (after! scala-mode
-  (setq scala-indent:use-javadoc-style nil
-        lsp-metals-server-command "metals"))
+  (setq scala-indent:use-javadoc-style nil))
 
-(use-package! lsp-metals
-  :config
-  (setq lsp-metals-server-args '("-J-Dmetals.startMcpServer=true" "-J-Dmetals.mcpClient=claude")))
+(set-eglot-client! '(scala-mode scala-ts-mode)
+  '("metals"
+    "-J-Dmetals.startMcpServer=true"
+    "-J-Dmetals.mcpClient=claude"))
 
 (setq
  projectile-project-root-functions '(projectile-root-local

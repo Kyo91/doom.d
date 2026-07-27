@@ -47,7 +47,6 @@
                                         ;(package! builtin-package :recipe (:branch "develop"))
 (package! conda)
 (package! blacken)
-(package! fira-code-mode)
 (package! protobuf-mode)
 
 (unpin! org-roam)
@@ -66,3 +65,4 @@
   :recipe (:host github :repo "cmacrae/agent-shell-sidebar"))
 (package! agent-shell-org-transcript
   :recipe (:host github :repo "lllShamanlll/agent-shell-org-transcript"))
+(package! agent-shell-dispatch :recipe (:host github :repo "cassandracomar/agent-shell-dispatch"))

@@ -54,6 +54,11 @@
 ;; change `org-directory'. It must be set before org loads!
 (setq org-directory "~/agenda/")
 
+(defun open-ai-notes-dir ()
+  "Open the AI notes directory in Dired in another window."
+  (interactive)
+  (dired-other-window (file-name-as-directory (expand-file-name "~/claude-notes"))))
+
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
 (setq display-line-numbers-type 'relative)
@@ -130,9 +135,6 @@
    "gc"  "magit-commit"
    "rg"  "rg --color=always $*"))
 
-;; (use-package! fira-code-mode
-;;   :hook prog-mode)
-;;
 (on-env 'osx
   (plist-put! +ligatures-extra-symbols
               :true "⊤"
@@ -219,10 +221,10 @@
   (setq lsp-metals-server-args '("-J-Dmetals.startMcpServer=true" "-J-Dmetals.mcpClient=claude")))
 
 (setq
- projectile-project-root-files-functions '(projectile-root-local
-                                           projectile-root-top-down
-                                           projectile-root-top-down-recurring
-                                           projectile-root-bottom-up))
+ projectile-project-root-functions '(projectile-root-local
+                                     projectile-root-top-down
+                                     projectile-root-top-down-recurring
+                                     projectile-root-bottom-up))
 
 (use-package! jsonnet-mode
   :defer t
@@ -264,7 +266,25 @@
   :config
   (require 'acp)
   (require 'agent-shell)
-  (setq agent-shell-anthropic-authentication (agent-shell-anthropic-make-authentication :login t)))
+  (setq agent-shell-anthropic-authentication (agent-shell-anthropic-make-authentication :login t))
+  (map! :leader "b a" #'agent-shell-switch-buffer)
+  (setq agent-shell-openai-authentication
+        (agent-shell-openai-make-authentication :api-key "")))
 
-(use-package! agent-shell-sidebar :after agent-shell)
+(use-package! agent-shell-sidebar
+  :after agent-shell
+  :custom
+  (agent-shell-sidebar-width "25%")
+  (agent-shell-sidebar-minimum-width 80)
+  (agent-shell-sidebar-maximum-width "50%")
+  (agent-shell-sidebar-position 'right)
+  (agent-shell-sidebar-locked t)
+  (agent-shell-sidebar-default-config
+   (agent-shell-anthropic-make-claude-code-config))
+  :bind
+  (("C-c a s" . agent-shell-sidebar-toggle)
+   ("C-c a f" . agent-shell-sidebar-toggle-focus)))
 (use-package! agent-shell-org-transcript :after agent-shell)
+
+(use-package! agent-shell-dispatch :after agent-shell
+              :custom (agent-shell-dispatch-global-mode 1))

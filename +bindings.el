@@ -8,7 +8,7 @@
       :desc "Project Agenda" :nv "pa" #'kyo/open-project-agenda
       ;; (:desc "elisp" :prefix "e"
       ;;   :desc "defun" :n "f" #'eval-defun)
-      (:desc "apps" :prefix "a"
+      (:desc "apps" :prefix "A"
        :desc "Calc" :n "c" #'calc))
 
 ;; Emacs style forwards/backwards in insert mode

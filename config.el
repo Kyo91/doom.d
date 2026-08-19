@@ -86,10 +86,7 @@
       )
 
 (map! :gi "C-f" #'forward-char
-      :gi "C-b" #'backward-char
-
-      :leader
-      :desc "Calc" "a c" #'calc)
+      :gi "C-b" #'backward-char)
 
 
 
@@ -186,20 +183,20 @@
 (after! org-roam
   (setq org-roam-list-files-commands '(find fd fdfind rg)))
 
-(use-package! websocket
-  :after org-roam)
+;; (use-package! websocket
+;;   :after org-roam)
 
-(use-package! org-roam-ui
-  :after org-roam ;; or :after org
-  ;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
-  ;;         a hookable mode anymore, you're advised to pick something yourself
-  ;;         if you don't care about startup time, use
-  :hook (after-init . org-roam-ui-mode)
-  :config
-  (setq org-roam-ui-sync-theme t
-        org-roam-ui-follow t
-        org-roam-ui-update-on-save t
-        org-roam-ui-open-on-start t))
+;; (use-package! org-roam-ui
+;;   :after org-roam ;; or :after org
+;;   ;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
+;;   ;;         a hookable mode anymore, you're advised to pick something yourself
+;;   ;;         if you don't care about startup time, use
+;;   :hook (after-init . org-roam-ui-mode)
+;;   :config
+;;   (setq org-roam-ui-sync-theme t
+;;         org-roam-ui-follow t
+;;         org-roam-ui-update-on-save t
+;;         org-roam-ui-open-on-start t))
 
 (pixel-scroll-precision-mode)
 
@@ -207,9 +204,10 @@
   (setq scala-indent:use-javadoc-style nil))
 
 (set-eglot-client! '(scala-mode scala-ts-mode)
-  '("metals"
-    "-J-Dmetals.startMcpServer=true"
-    "-J-Dmetals.mcpClient=claude"))
+                   '("metals"
+                     "-J-Dmetals.startMcpServer=true"
+                     "-J-Dmetals.mcpClient=claude"
+                     :initializationOptions (:isHttpEnabled t)))
 
 (setq
  projectile-project-root-functions '(projectile-root-local
@@ -261,6 +259,49 @@
   (map! :leader "b a" #'agent-shell-switch-buffer)
   (setq agent-shell-openai-authentication
         (agent-shell-openai-make-authentication :api-key "")))
+
+(after! agent-shell
+  (defcustom *my/agent-shell-reviewer-model* "gpt-5.6-sol"
+    "Model used by `my/agent-shell-start-review'."
+    :type 'string
+    :group 'agent-shell)
+
+  (defcustom *my/agent-shell-reviewer-effort-level* "high"
+    "Reasoning effort used by `my/agent-shell-start-review'."
+    :type 'string
+    :group 'agent-shell)
+
+  (defun my/agent-shell-start-review ()
+    "Start a Codex code-review session and prepare an editable prompt."
+    (interactive)
+    (let* ((model *my/agent-shell-reviewer-model*)
+           (effort-level *my/agent-shell-reviewer-effort-level*)
+           (prompt (concat "Review the code changes on this branch. Focus on "
+                           "readability, idiomatic Scala usage, and concise, "
+                           "useful comments."))
+           (config (agent-shell-openai-make-codex-config))
+           (shell-buffer nil)
+           (subscription nil))
+      ;; Override the model for this review session without changing the
+      ;; default used by other Codex sessions.
+      (map-put! config :default-model-id (lambda () model))
+      (setq shell-buffer
+            (agent-shell--start :config config :new-session t :no-focus t))
+      (setq subscription
+            (agent-shell-subscribe-to
+             :shell-buffer shell-buffer
+             :event 'init-finished
+             :on-event
+             (lambda (_event)
+               (agent-shell-unsubscribe :subscription subscription)
+               (with-current-buffer shell-buffer
+                 (agent-shell--config-option-set-thought-level-id
+                  :thought-level-id effort-level
+                  :on-success
+                  (lambda ()
+                    (agent-shell-insert :text prompt
+                                        :shell-buffer shell-buffer)))))))
+      (agent-shell--display-buffer shell-buffer))))
 
 (use-package! agent-shell-sidebar
   :after agent-shell

@@ -53,6 +53,8 @@
 ;; If you use `org' and don't want your org files in the default location below,
 ;; change `org-directory'. It must be set before org loads!
 (setq org-directory "~/agenda/")
+(setq hywiki-directory "~/hywiki/")
+
 
 (defun open-ai-notes-dir ()
   "Open the AI notes directory in Dired in another window."
@@ -140,11 +142,39 @@
   (setq projectile-file-exists-remote-cache-expire (* 10 60)))
 
 (after! org
-  (setq org-log-done 'time)
-  (add-to-list
-   'org-capture-templates
-   '("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i %a \nCreated at: %T" :prepend t)))
-
+  (setq org-log-done 'time
+        hywiki-directory "~/hywiki/"
+        my/org-capture-ideas-file (expand-file-name "ideas.org" org-directory)
+        org-capture-templates '(("t" "Personal todo" entry (file+headline +org-capture-todo-file "Inbox")
+                                 "* TODO %?\n%i\n%a \nCreated at: %T" :prepend t)
+                                ("T" "Todo (no context)" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i \nCreated at: %T" :prepend t)
+                                ("d" "Daily todo" entry (file+headline +org-capture-todo-file "Dailies")
+                                 ("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i %a \nCreated at: %T" :prepend t)
+                                 "* TODO %?\n%i\n" :prepend nil)
+                                ("r" "Random Thoughts" entry (file+headline my/org-capture-ideas-file "Random")
+                                 "* TODO %?\n%i\n%a" :prepend t)
+                                ("n" "Personal notes" entry (file+headline +org-capture-notes-file "Inbox")
+                                 "* %u %?\n%i\n%a" :prepend t)
+                                ("j" "Journal" entry (file+olp+datetree +org-capture-journal-file)
+                                 "* %U %?\n%i\n%a" :prepend t)
+                                ("p" "Templates for projects")
+                                ("pt" "Project-local todo" entry
+                                 (file+headline +org-capture-project-todo-file "Inbox") "* TODO %?\n%i\n%a"
+                                 :prepend t)
+                                ("pn" "Project-local notes" entry
+                                 (file+headline +org-capture-project-notes-file "Inbox") "* %U %?\n%i\n%a"
+                                 :prepend t)
+                                ("pc" "Project-local changelog" entry
+                                 (file+headline +org-capture-project-changelog-file "Unreleased")
+                                 "* %U %?\n%i\n%a" :prepend t)
+                                ("o" "Centralized templates for projects")
+                                ("ot" "Project todo" entry #'+org-capture-central-project-todo-file
+                                 "* TODO %?\n %i\n %a" :heading "Tasks" :prepend nil)
+                                ("on" "Project notes" entry #'+org-capture-central-project-notes-file
+                                 "* %U %?\n %i\n %a" :heading "Notes" :prepend t)
+                                ("oc" "Project changelog" entry #'+org-capture-central-project-changelog-file
+                                 "* %U %?\n %i\n %a" :heading "Changelog" :prepend t)))
+  )
 (use-package! blacken
   :init
   (setq blacken-executable "~/.local/bin/black"))
@@ -320,3 +350,67 @@
 
 (use-package! agent-shell-dispatch :after agent-shell
               :custom (agent-shell-dispatch-global-mode 1))
+
+(defun my/org-goto-last-daily-headline ()
+  "Move point to the last headline in the `Dailies' subtree."
+  (org-with-wide-buffer
+   (goto-char (point-min))
+   (when (org-find-exact-headline-in-buffer "Dailies")
+     (let ((last-headline (point))
+           (subtree-end (save-excursion (org-end-of-subtree t t))))
+       (while (re-search-forward org-heading-regexp subtree-end t)
+         (setq last-headline (match-beginning 0)))
+       (goto-char last-headline)))))
+
+(defun my/toggle-org-todo-buffer ()
+  "Toggle the agenda todo file, visiting its latest daily on first open."
+  (interactive)
+  (let* ((todo-file (+org-capture-todo-file))
+         (buffer (get-file-buffer todo-file))
+         (window (and buffer (get-buffer-window buffer))))
+    (if window
+        (delete-window window)
+      (let ((new-buffer-p (not buffer))
+            (buffer (find-file-noselect todo-file)))
+        (pop-to-buffer buffer)
+        (when new-buffer-p
+          (my/org-goto-last-daily-headline))))))
+
+(defun my/org-todo-buffer-p (buffer-or-name &rest _)
+  "Return non-nil when BUFFER-OR-NAME visits the agenda todo file."
+  (let ((buffer (if (bufferp buffer-or-name)
+                    buffer-or-name
+                  (get-buffer buffer-or-name))))
+    (and buffer
+         (equal (buffer-file-name buffer) (+org-capture-todo-file)))))
+
+(set-popup-rule! #'my/org-todo-buffer-p
+  :side 'bottom :height 0.35 :select t :modeline t :quit nil :ttl nil)
+
+;; Helper for quickly finding org files
+(defun my/org-find-file ()
+  "Find a file in the Org agenda directory."
+  (interactive)
+  (let ((default-directory (file-name-as-directory
+                            (expand-file-name org-directory))))
+    (call-interactively #'consult-find)))
+
+(map! :leader :desc "Find Org File" "o a f" #'my/org-find-file
+      :leader :desc "Toggle todo buffer" "o t" #'my/toggle-org-todo-buffer)
+
+;;; Hyperbole
+(after! hyperbole
+  ;; Enable Hyperbole globally.
+  (hyperbole-mode 1)
+
+  ;; enable hywiki-mode and make HyWikiWords appear everywhere
+  (hywiki-mode :all)
+
+  (setq hyrolo-file-list (list "~/.rolo.org" org-directory hywiki-directory)
+        hsys-org-enable-smart-keys t))
+
+(map! :leader
+      :prefix ("H" . "hyperbole")
+      :desc "Hyperbole menu" "h" #'hyperbole
+      :desc "Action" "a" #'hkey-either
+      :desc "Toggle Hyperbole mode" "m" #'hyperbole-mode)

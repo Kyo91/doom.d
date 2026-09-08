@@ -66,3 +66,5 @@
 (package! agent-shell-org-transcript
   :recipe (:host github :repo "lllShamanlll/agent-shell-org-transcript"))
 (package! agent-shell-dispatch :recipe (:host github :repo "cassandracomar/agent-shell-dispatch"))
+
+(package! hyperbole)

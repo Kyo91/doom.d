@@ -51,6 +51,7 @@
 
 (unpin! org-roam)
 (package! org-roam-ui)
+(package! consult-org-roam)
 
 (package! jsonnet-mode)
 

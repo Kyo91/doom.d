@@ -146,35 +146,34 @@
         hywiki-directory "~/hywiki/"
         my/org-capture-ideas-file (expand-file-name "ideas.org" org-directory)
         org-capture-templates '(("t" "Personal todo" entry (file+headline +org-capture-todo-file "Inbox")
-                                 "* TODO %?\n%i\n%a \nCreated at: %T" :prepend t)
+                                 "* TODO %?\n:PROPERTIES:\n:CREATED:  %U\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("T" "Todo (no context)" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i \nCreated at: %T" :prepend t)
-                                ("d" "Daily todo" entry (file+headline +org-capture-todo-file "Dailies")
-                                 ("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i %a \nCreated at: %T" :prepend t)
-                                 "* TODO %?\n%i\n" :prepend nil)
+                                ("d" "Daily todo" entry (file+headline +org-capture-todo-file "Dailies") "* TODO %?\n:PROPERTIES:\n:CREATED:  %U\n:END:\n%i" :prepend nil)
+                                ("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n:PROPERTIES:\n:CREATED:  %U\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("r" "Random Thoughts" entry (file+headline my/org-capture-ideas-file "Random")
-                                 "* TODO %?\n%i\n%a" :prepend t)
+                                 "* TODO %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("n" "Personal notes" entry (file+headline +org-capture-notes-file "Inbox")
-                                 "* %u %?\n%i\n%a" :prepend t)
+                                 "* %u %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("j" "Journal" entry (file+olp+datetree +org-capture-journal-file)
-                                 "* %U %?\n%i\n%a" :prepend t)
+                                 "* %U %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("p" "Templates for projects")
                                 ("pt" "Project-local todo" entry
-                                 (file+headline +org-capture-project-todo-file "Inbox") "* TODO %?\n%i\n%a"
+                                 (file+headline +org-capture-project-todo-file "Inbox") "* TODO %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i"
                                  :prepend t)
                                 ("pn" "Project-local notes" entry
-                                 (file+headline +org-capture-project-notes-file "Inbox") "* %U %?\n%i\n%a"
+                                 (file+headline +org-capture-project-notes-file "Inbox") "* %U %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i"
                                  :prepend t)
                                 ("pc" "Project-local changelog" entry
                                  (file+headline +org-capture-project-changelog-file "Unreleased")
-                                 "* %U %?\n%i\n%a" :prepend t)
+                                 "* %U %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("o" "Centralized templates for projects")
                                 ("ot" "Project todo" entry #'+org-capture-central-project-todo-file
-                                 "* TODO %?\n %i\n %a" :heading "Tasks" :prepend nil)
+                                 "* TODO %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :heading "Tasks" :prepend nil)
                                 ("on" "Project notes" entry #'+org-capture-central-project-notes-file
-                                 "* %U %?\n %i\n %a" :heading "Notes" :prepend t)
+                                 "* %U %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :heading "Notes" :prepend t)
                                 ("oc" "Project changelog" entry #'+org-capture-central-project-changelog-file
-                                 "* %U %?\n %i\n %a" :heading "Changelog" :prepend t)))
-  )
+                                 "* %U %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :heading "Changelog" :prepend t))))
+
 (use-package! blacken
   :init
   (setq blacken-executable "~/.local/bin/black"))
@@ -346,7 +345,9 @@
   :bind
   (("C-c a s" . agent-shell-sidebar-toggle)
    ("C-c a f" . agent-shell-sidebar-toggle-focus)))
-(use-package! agent-shell-org-transcript :after agent-shell)
+(use-package! agent-shell-org-transcript :after agent-shell
+              :config
+              (setq agent-shell-org-transcript-directory (expand-file-name "work/" org-roam-directory)))
 
 (use-package! agent-shell-dispatch :after agent-shell
               :custom (agent-shell-dispatch-global-mode 1))

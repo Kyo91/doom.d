@@ -28,10 +28,30 @@
   :type 'string
   :group 'my-jira)
 
-(defcustom my/jira-seed-jql
-  "assignee = currentUser() OR watcher = currentUser()"
-  "JQL selecting the initial set of issues for the local Jira graph."
-  :type 'string
+(defcustom my/jira-assigned-projects '(UPCMP UPORC)
+  "Projects searched for issues assigned to the current Jira user."
+  :type '(repeat symbol)
+  :group 'my-jira)
+
+(defcustom my/jira-watched-projects
+  '(UPCMP UPORC CMP HELP UPSUP UPPI PROJ UPXD)
+  "Projects searched for issues watched by the current Jira user."
+  :type '(repeat symbol)
+  :group 'my-jira)
+
+(defcustom my/jira-excluded-statuses
+  '("Canceled" "Change Cancelled" "Trash" "Cancelled")
+  "Jira status names excluded from assigned and watched seed searches.
+
+This does not filter one-hop context issues."
+  :type '(repeat string)
+  :group 'my-jira)
+
+(defcustom my/jira-seed-max-age-days 365
+  "Maximum age in days of issues included in seed searches.
+
+This does not limit one-hop context issues."
+  :type 'integer
   :group 'my-jira)
 
 (defcustom my/jira-request-timeout 30
@@ -41,6 +61,11 @@
 
 (defcustom my/jira-page-size 100
   "Number of issues requested from Jira in each search page."
+  :type 'integer
+  :group 'my-jira)
+
+(defcustom my/jira-key-batch-size 50
+  "Maximum number of Jira keys interpolated into one JQL query."
   :type 'integer
   :group 'my-jira)
 
@@ -93,6 +118,14 @@ The default is the Epic Link field reported by `my/jira-diagnose'."
 
 (defcustom my/jira-index-written-nodes t
   "When non-nil, incrementally update Org-roam after writing each node."
+  :type 'boolean
+  :group 'my-jira)
+
+(defcustom my/jira-cleanup-trash-nodes-after-refresh nil
+  "When non-nil, move Jira nodes with status Trash to the system Trash.
+
+Cleanup runs after a successful refresh has written its dashboard. This is
+disabled by default because generated nodes can contain user-owned Notes."
   :type 'boolean
   :group 'my-jira)
 
@@ -266,8 +299,8 @@ The credential and response are never written to disk."
 (defun my/jira--search-fields ()
   "Return the Jira fields needed by the importer."
   (string-join
-   (append '("summary" "status" "issuetype" "assignee" "updated"
-             "parent" "issuelinks" "project")
+   (append '("summary" "description" "status" "issuetype" "assignee"
+             "updated" "parent" "issuelinks" "project")
            (delq nil (list my/jira-epic-link-field
                            my/jira-parent-link-field)))
    ","))
@@ -311,13 +344,81 @@ pagination state."
 
 (defun my/jira--valid-key-p (key)
   "Return non-nil when KEY has the shape of a Jira issue key."
-  (and (stringp key)
-       (string-match-p (rx string-start
+  (let ((case-fold-search nil))
+    (and (stringp key)
+         (string-match (rx string-start
                            upper
                            (+ (or upper digit "_"))
-                           "-" (+ digit)
+                           "-" (group (+ digit))
                            string-end)
-                       key)))
+                       key)
+         (> (string-to-number (match-string 1 key)) 0))))
+
+(defun my/jira--valid-project-p (project)
+  "Return non-nil when PROJECT is a safe Jira project symbol."
+  (let ((case-fold-search nil))
+    (and (symbolp project)
+         (not (keywordp project))
+         (string-match-p (rx string-start upper
+                             (* (or upper digit "_")) string-end)
+                         (symbol-name project)))))
+
+(defun my/jira--jql-project-list (projects)
+  "Format PROJECTS for a JQL `project IN (...)' expression.
+
+Only uppercase Jira project symbols are accepted."
+  (unless (and projects (seq-every-p #'my/jira--valid-project-p projects))
+    (user-error
+     "Jira projects must be a non-empty list of uppercase project symbols"))
+  (string-join (mapcar #'symbol-name projects) ", "))
+
+(defun my/jira--jql-string (value)
+  "Return VALUE as a safely quoted JQL string."
+  (unless (and (stringp value)
+               (not (string-empty-p value))
+               (not (string-match-p (rx (or control "\n" "\r")) value)))
+    (user-error "Jira status names must be non-empty strings without controls"))
+  (json-encode-string value))
+
+(defun my/jira--seed-filter-jql (projects)
+  "Return project, status, and age seed filters for PROJECTS."
+  (unless (and (integerp my/jira-seed-max-age-days)
+               (> my/jira-seed-max-age-days 0))
+    (user-error "`my/jira-seed-max-age-days' must be a positive integer"))
+  (let ((clauses
+         (list
+          (format "project IN (%s)" (my/jira--jql-project-list projects))
+          (when my/jira-excluded-statuses
+            (format "status NOT IN (%s)"
+                    (string-join
+                     (mapcar #'my/jira--jql-string my/jira-excluded-statuses)
+                     ", ")))
+          (format "created >= -%dd" my/jira-seed-max-age-days))))
+    (string-join (delq nil clauses) " AND ")))
+
+(defun my/jira--assigned-jql ()
+  "Return JQL selecting configured projects assigned to the current user."
+  (format "assignee = currentUser() AND %s"
+          (my/jira--seed-filter-jql my/jira-assigned-projects)))
+
+(defun my/jira--watched-jql ()
+  "Return JQL selecting configured projects watched by the current user."
+  (format "watcher = currentUser() AND %s"
+          (my/jira--seed-filter-jql my/jira-watched-projects)))
+
+(defun my/jira--seed-jql ()
+  "Return the complete configured seed JQL."
+  (format "(%s) OR (%s)" (my/jira--assigned-jql) (my/jira--watched-jql)))
+
+(defun my/jira--mark-seeds (issues relationship)
+  "Return copies of ISSUES marked with seed RELATIONSHIP."
+  (mapcar (lambda (issue)
+            (cons (cons 'my/jira-relationship relationship) issue))
+          issues))
+
+(defun my/jira--issue-relationship (issue)
+  "Return ISSUE's seed relationship, either `assigned', `watching', or nil."
+  (alist-get 'my/jira-relationship issue))
 
 (defun my/jira--issue-link-keys (issue)
   "Return keys of issues explicitly linked to ISSUE."
@@ -353,6 +454,21 @@ pagination state."
     (error "Refusing to interpolate an invalid Jira key into JQL"))
   (concat "key in (" (string-join keys ", ") ")"))
 
+(defun my/jira--normalize-explicit-keys (keys)
+  "Validate and deduplicate explicit Jira KEYS, preserving order."
+  (unless (and keys (proper-list-p keys))
+    (user-error "Jira keys must be a non-empty proper list"))
+  (unless (seq-every-p #'my/jira--valid-key-p keys)
+    (user-error "Every Jira key must have an uppercase PROJECT-NUMBER form"))
+  (delete-dups (copy-sequence keys)))
+
+(defun my/jira--explicit-fetch-jobs (keys)
+  "Return batched, unfiltered search jobs for explicit Jira KEYS."
+  (mapcar
+   (lambda (chunk)
+     (list :label "explicit issues" :jql (my/jira--jql-key-list chunk)))
+   (my/jira--chunks keys my/jira-key-batch-size)))
+
 (defun my/jira--custom-field-number (field)
   "Return the numeric suffix from a Jira custom FIELD ID."
   (when (and field
@@ -370,6 +486,8 @@ pagination state."
 
 (defun my/jira--chunks (items size)
   "Split ITEMS into lists containing at most SIZE elements."
+  (unless (and (integerp size) (> size 0))
+    (user-error "Jira batch size must be a positive integer"))
   (let (chunks)
     (while items
       (let ((chunk nil))
@@ -411,55 +529,109 @@ string."
           (1+ completed) total on-success on-error))
        on-error))))
 
+(defun my/jira--fetch-one-hop-relations-async
+    (operation seeds on-success on-error)
+  "Fetch one-hop context for SEEDS and pass the complete graph to ON-SUCCESS."
+  (let* ((seed-keys (mapcar #'my/jira--issue-key seeds))
+         (linked-keys (delete-dups (mapcan #'my/jira--issue-link-keys seeds)))
+         (parent-keys (delq nil (mapcar #'my/jira--issue-parent-key seeds)))
+         (neighbor-keys (delete-dups (append linked-keys parent-keys)))
+         (missing-keys (seq-remove (lambda (key) (member key seed-keys))
+                                   neighbor-keys))
+         (epic-keys (mapcar #'my/jira--issue-key
+                            (seq-filter #'my/jira--epic-p seeds)))
+         (neighbor-jobs
+          (mapcar (lambda (keys)
+                    (list :label "linked/parent issues"
+                          :jql (my/jira--jql-key-list keys)))
+                  (my/jira--chunks missing-keys my/jira-key-batch-size)))
+         (child-jobs
+          (mapcar (lambda (keys)
+                    (list :label "Epic children"
+                          :jql (my/jira--epic-children-jql keys)))
+                  (my/jira--chunks epic-keys my/jira-key-batch-size)))
+         (jobs (append neighbor-jobs child-jobs)))
+    (setf (my/jira-operation-phase operation) 'fetching-relations)
+    (if jobs
+        (my/jira--run-search-jobs-async
+         operation jobs seeds 0 (length jobs)
+         (lambda (issues)
+           (funcall on-success (my/jira--deduplicate-issues issues)))
+         on-error)
+      (funcall on-success seeds))))
+
 (defun my/jira-fetch-one-hop-graph-async
     (operation on-success on-error)
   "Asynchronously fetch the one-hop Jira graph for OPERATION.
 
-Edges include explicit Jira issue links, a seed issue's parent, and all
-children of seed Epics regardless of assignee. ON-SUCCESS receives the
-deduplicated issue list; ON-ERROR receives an error string."
-  (setf (my/jira-operation-phase operation) 'fetching-seeds)
+Assigned and watched seeds are fetched separately so their dashboard
+relationship is exact.  Assigned classification takes precedence when an
+issue matches both searches.  Context includes explicit links, seed parents,
+and all children of seed Epics.  ON-SUCCESS receives the deduplicated issue
+list; ON-ERROR receives an error string."
+  (setf (my/jira-operation-phase operation) 'fetching-assigned-seeds)
   (my/jira--search-all-async
-   operation my/jira-seed-jql "seed issues"
-   (lambda (seeds)
+   operation (my/jira--assigned-jql) "assigned seed issues"
+   (lambda (assigned)
      (when (my/jira--operation-live-p operation)
-       (let* ((seed-keys (mapcar #'my/jira--issue-key seeds))
-              (linked-keys
-               (delete-dups (mapcan #'my/jira--issue-link-keys seeds)))
-              (parent-keys
-               (delq nil (mapcar #'my/jira--issue-parent-key seeds)))
-              (neighbor-keys (delete-dups (append linked-keys parent-keys)))
-              (missing-keys
-               (seq-remove (lambda (key) (member key seed-keys))
-                           neighbor-keys))
-              (epic-keys
-               (mapcar #'my/jira--issue-key
-                       (seq-filter #'my/jira--epic-p seeds)))
-              (neighbor-jobs
-               (mapcar (lambda (keys)
-                         (list :label "linked/parent issues"
-                               :jql (my/jira--jql-key-list keys)))
-                       (my/jira--chunks missing-keys 50)))
-              (child-jobs
-               (mapcar (lambda (keys)
-                         (list :label "Epic children"
-                               :jql (my/jira--epic-children-jql keys)))
-                       (my/jira--chunks epic-keys 50)))
-              (jobs (append neighbor-jobs child-jobs)))
-         (setf (my/jira-operation-phase operation) 'fetching-relations)
-         (if jobs
-             (my/jira--run-search-jobs-async
-              operation jobs seeds 0 (length jobs)
-              (lambda (issues)
-                (funcall on-success (my/jira--deduplicate-issues issues)))
-              on-error)
-           (funcall on-success seeds)))))
+       (setf (my/jira-operation-phase operation) 'fetching-watched-seeds)
+       (my/jira--search-all-async
+        operation (my/jira--watched-jql) "watched seed issues"
+        (lambda (watched)
+          (when (my/jira--operation-live-p operation)
+            (let ((seeds
+                   (my/jira--deduplicate-issues
+                    (append (my/jira--mark-seeds assigned 'assigned)
+                            (my/jira--mark-seeds watched 'watching)))))
+              (my/jira--fetch-one-hop-relations-async
+               operation seeds on-success on-error))))
+        on-error)))
    on-error))
 
 (defun my/jira--single-line (value)
   "Return VALUE as trimmed single-line text."
   (string-trim
    (replace-regexp-in-string "[\n\r]+" " " (or value ""))))
+
+(defun my/jira--structured-description-text (document)
+  "Extract readable text from a structured Jira description DOCUMENT."
+  (cond
+   ((stringp document) document)
+   ((not (listp document)) "")
+   ((stringp (alist-get 'text document))
+    (alist-get 'text document))
+   ((equal (alist-get 'type document) "hardBreak") "\n")
+   ((alist-get 'content document)
+    (let* ((type (alist-get 'type document))
+           (separator (if (member type '("bulletList" "orderedList")) "\n" ""))
+           (text
+            (mapconcat #'my/jira--structured-description-text
+                       (alist-get 'content document) separator)))
+      (if (member type '("paragraph" "heading" "listItem" "blockquote"))
+          (concat text "\n")
+        text)))
+   (t "")))
+
+(defun my/jira--description-text (value)
+  "Return Jira description VALUE as normalized text."
+  (string-trim-right
+   (replace-regexp-in-string
+    "\r\n?" "\n"
+    (if (stringp value)
+        value
+      (my/jira--structured-description-text value)))))
+
+(defun my/jira--render-description (value)
+  "Render Jira description VALUE safely beneath an Org subheading."
+  (let ((text (my/jira--description-text value)))
+    (if (string-empty-p text)
+        "  _No description._\n"
+      (concat
+       (mapconcat (lambda (line)
+                    (if (string-empty-p line) "" (concat "  " line)))
+                  (split-string text "\n" nil)
+                  "\n")
+       "\n"))))
 
 (defun my/jira--node-id (key)
   "Return the stable Org ID for Jira KEY."
@@ -503,6 +675,7 @@ deduplicated issue list; ON-ERROR receives an error string."
   (let* ((key (my/jira--issue-key issue))
          (fields (alist-get 'fields issue))
          (summary (my/jira--single-line (alist-get 'summary fields)))
+         (description (alist-get 'description fields))
          (status (my/jira--single-line
                   (alist-get 'name (alist-get 'status fields))))
          (issue-type (my/jira--single-line
@@ -547,6 +720,8 @@ deduplicated issue list; ON-ERROR receives an error string."
                   related-keys "\n")
                  "\n")
        "")
+     "\n** Description\n"
+     (my/jira--render-description description)
      "\n"
      (or notes "* Notes\n"))))
 
@@ -570,6 +745,113 @@ deduplicated issue list; ON-ERROR receives an error string."
       (when (and temporary-file (file-exists-p temporary-file))
         (delete-file temporary-file)))
     file))
+
+(defun my/jira--node-file-status (file)
+  "Return the generated Jira status property from node FILE, or nil.
+
+Only the property drawer below the generated `* Jira' heading is inspected;
+status-like text in the user-owned Notes subtree is ignored."
+  (when (file-readable-p file)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (let ((case-fold-search nil))
+        (when (re-search-forward (rx line-start "* Jira" line-end) nil t)
+          (let ((section-start (point))
+                (expected-key (file-name-base file))
+                (section-end
+                 (or (save-excursion
+                       (when (re-search-forward (rx line-start "* Notes"
+                                                    line-end)
+                                                nil t)
+                         (match-beginning 0)))
+                     (point-max)))
+                key status)
+            (when (re-search-forward
+                   (rx line-start ":JIRA_KEY:" (+ blank)
+                       (group (+ (not blank))) (* blank) line-end)
+                   section-end t)
+              (setq key (match-string-no-properties 1)))
+            (goto-char section-start)
+            (when (re-search-forward
+                   (rx line-start ":JIRA_STATUS:" (+ blank)
+                       (group (* nonl)) line-end)
+                   section-end t)
+              (setq status (string-trim (match-string-no-properties 1))))
+            (and (equal key expected-key) status)))))))
+
+(defun my/jira--trash-node-files ()
+  "Return generated Jira node files whose exact status is Trash."
+  (when (file-directory-p my/jira-node-directory)
+    (seq-filter
+     (lambda (file)
+       (and (file-regular-p file)
+            (my/jira--valid-key-p (file-name-base file))
+            (string-equal (my/jira--node-file-status file) "Trash")))
+     (directory-files my/jira-node-directory t
+                      (rx string-start upper
+                          (+ (or upper digit "_")) "-" (+ digit)
+                          ".org" string-end)))))
+
+(defun my/jira--modified-file-buffer-p (file)
+  "Return non-nil when FILE is visited by a modified buffer."
+  (when-let ((buffer (find-buffer-visiting file)))
+    (buffer-modified-p buffer)))
+
+;;;###autoload
+(defun my/jira-cleanup-trash-nodes (&optional skip-confirmation)
+  "Move generated Jira nodes with exact status Trash to the system Trash.
+
+Only files directly beneath `my/jira-node-directory' with valid Jira-key
+filenames, a matching generated `JIRA_KEY', and a generated `JIRA_STATUS'
+property equal to `Trash' are eligible.
+Files visited by modified buffers are skipped to protect unsaved Notes.
+
+Interactively, ask before moving any files. When SKIP-CONFIRMATION is non-nil,
+perform cleanup without prompting; this is used by opt-in post-refresh cleanup.
+Return the list of files successfully moved to the system Trash."
+  (interactive)
+  (let* ((candidates (my/jira--trash-node-files))
+         (approved
+          (or skip-confirmation
+              (null candidates)
+              (yes-or-no-p
+               (format "Move %d Jira Trash node%s to the system Trash? "
+                       (length candidates)
+                       (if (= (length candidates) 1) "" "s")))))
+         removed
+         skipped)
+    (unless approved
+      (user-error "Jira Trash-node cleanup canceled"))
+    (dolist (file candidates)
+      (if (my/jira--modified-file-buffer-p file)
+          (push file skipped)
+        (condition-case err
+            (progn
+              (delete-file file t)
+              (push file removed))
+          (error
+           (message "Jira cleanup could not trash %s: %s"
+                    (file-name-nondirectory file)
+                    (error-message-string err))))))
+    (setq removed (nreverse removed)
+          skipped (nreverse skipped))
+    (when (and removed (fboundp 'org-roam-db-sync))
+      (condition-case err
+          (org-roam-db-sync)
+        (error
+         (message "Jira cleanup: Org-roam sync failed: %s"
+                  (error-message-string err)))))
+    (if candidates
+        (message "Jira cleanup: moved %d node%s to Trash%s"
+                 (length removed) (if (= (length removed) 1) "" "s")
+                 (if skipped
+                     (format "; skipped %d modified buffer%s"
+                             (length skipped)
+                             (if (= (length skipped) 1) "" "s"))
+                   ""))
+      (message "Jira cleanup: no Trash nodes found"))
+    removed))
 
 (defun my/jira--dashboard-archive-file ()
   "Return the default archive filename for the Jira dashboard."
@@ -611,8 +893,8 @@ deduplicated issue list; ON-ERROR receives an error string."
   (my/jira--single-line
    (alist-get 'displayName (alist-get 'assignee (alist-get 'fields issue)))))
 
-(defun my/jira--insert-dashboard-issue (issue level &optional children)
-  "Insert ISSUE at Org LEVEL, followed by optional CHILDREN."
+(defun my/jira--insert-dashboard-issue (issue level children-table)
+  "Insert ISSUE at Org LEVEL, recursively using CHILDREN-TABLE."
   (let* ((key (my/jira--issue-key issue))
          (summary (my/jira--issue-summary issue))
          (status (my/jira--issue-status issue))
@@ -635,51 +917,104 @@ deduplicated issue list; ON-ERROR receives an error string."
                   related-key (my/jira--node-id related-key)))
         related ", "))
       (insert "\n"))
-    (dolist (child (sort (copy-sequence children)
+    (dolist (child (sort (copy-sequence
+                          (gethash key children-table))
                          (lambda (a b)
                            (string-lessp (my/jira--issue-key a)
                                          (my/jira--issue-key b)))))
-      (my/jira--insert-dashboard-issue child (1+ level)))))
+      (my/jira--insert-dashboard-issue child (1+ level) children-table))))
+
+(defun my/jira--context-anchor (context seeds)
+  "Return the preferred seed that directly relates to CONTEXT.
+
+SEEDS must have assigned seeds before watched seeds so assigned context wins
+when a context issue is related to seeds in both dashboard sections."
+  (let ((context-key (my/jira--issue-key context))
+        (context-parent (my/jira--issue-parent-key context)))
+    (seq-find
+     (lambda (seed)
+       (let ((seed-key (my/jira--issue-key seed)))
+         (or (member context-key (my/jira--issue-link-keys seed))
+             (equal context-key (my/jira--issue-parent-key seed))
+             (and (my/jira--epic-p seed)
+                  (equal context-parent seed-key)))))
+     seeds)))
 
 (defun my/jira--render-dashboard (issues)
-  "Render ISSUES as an Epic-to-Story Org dashboard."
+  "Render ISSUES beneath Assigned and Watching dashboard sections."
   (let ((issue-table (make-hash-table :test #'equal))
         (children-table (make-hash-table :test #'equal))
-        (project-table (make-hash-table :test #'equal))
+        (root-table (make-hash-table :test #'equal))
         (archived (my/jira--archived-keys)))
     (dolist (issue issues)
       (unless (member (my/jira--issue-key issue) archived)
         (puthash (my/jira--issue-key issue) issue issue-table)))
-    (maphash
-     (lambda (_key issue)
-       (let* ((parent-key (my/jira--issue-parent-key issue))
-              (parent (and parent-key (gethash parent-key issue-table))))
-         (if (and parent (my/jira--epic-p parent))
-             (puthash parent-key
-                      (cons issue (gethash parent-key children-table))
-                      children-table)
-           (let ((project (my/jira--issue-project issue)))
-             (puthash project
-                      (cons issue (gethash project project-table))
-                      project-table)))))
-     issue-table)
+    (let* ((seeds
+            (sort (seq-filter #'my/jira--issue-relationship
+                              (hash-table-values issue-table))
+                  (lambda (a b)
+                    (let ((a-relation (my/jira--issue-relationship a))
+                          (b-relation (my/jira--issue-relationship b)))
+                      (if (eq a-relation b-relation)
+                          (string-lessp (my/jira--issue-key a)
+                                        (my/jira--issue-key b))
+                        (eq a-relation 'assigned))))))
+           (contexts
+            (seq-remove #'my/jira--issue-relationship
+                        (hash-table-values issue-table))))
+      ;; Preserve Epic-to-story nesting only within the same user relationship.
+      (dolist (seed seeds)
+        (let* ((parent-key (my/jira--issue-parent-key seed))
+               (parent (and parent-key (gethash parent-key issue-table)))
+               (same-kind-parent
+                (and parent (my/jira--epic-p parent)
+                     (eq (my/jira--issue-relationship parent)
+                         (my/jira--issue-relationship seed)))))
+          (if same-kind-parent
+              (puthash parent-key
+                       (cons seed (gethash parent-key children-table))
+                       children-table)
+            (let ((bucket (cons (my/jira--issue-relationship seed)
+                                (my/jira--issue-project seed))))
+              (puthash bucket (cons seed (gethash bucket root-table))
+                       root-table)))))
+      ;; Context is displayed under one directly related seed, never as a
+      ;; misleading third top-level relationship category.
+      (dolist (context contexts)
+        (when-let ((anchor (my/jira--context-anchor context seeds)))
+          (let ((anchor-key (my/jira--issue-key anchor)))
+            (puthash anchor-key
+                     (cons context (gethash anchor-key children-table))
+                     children-table)))))
     (with-temp-buffer
       (insert "#    -*- mode: org -*-\n"
               "#+title: Jira Dashboard\n"
               "#+startup: overview\n\n"
               "This file is generated by =my/jira-refresh=. "
               "Archive issue subtrees normally; archived keys are not regenerated.\n\n")
-      (dolist (project (sort (hash-table-keys project-table) #'string-lessp))
-        (let ((roots (gethash project project-table)))
-          (insert "* " project "\n")
-          (insert (format "  %d top-level issue%s\n"
-                          (length roots) (if (= (length roots) 1) "" "s")))
-          (dolist (issue (sort (copy-sequence roots)
-                               (lambda (a b)
-                                 (string-lessp (my/jira--issue-key a)
-                                               (my/jira--issue-key b)))))
-            (my/jira--insert-dashboard-issue
-             issue 2 (gethash (my/jira--issue-key issue) children-table)))))
+      (dolist (section '((assigned . "Assigned to me")
+                         (watching . "Watching")))
+        (insert "* " (cdr section) "\n")
+        (let ((projects
+               (sort
+                (delq nil
+                      (mapcar (lambda (bucket)
+                                (and (eq (car bucket) (car section))
+                                     (cdr bucket)))
+                              (hash-table-keys root-table)))
+                #'string-lessp)))
+          (dolist (project projects)
+            (let ((roots (gethash (cons (car section) project) root-table)))
+              (insert "** " project "\n")
+              (insert (format "  %d top-level issue%s\n"
+                              (length roots)
+                              (if (= (length roots) 1) "" "s")))
+              (dolist (issue (sort (copy-sequence roots)
+                                   (lambda (a b)
+                                     (string-lessp (my/jira--issue-key a)
+                                                   (my/jira--issue-key b)))))
+                (my/jira--insert-dashboard-issue
+                 issue 3 children-table))))))
       (buffer-string))))
 
 (defun my/jira--write-dashboard (issues)
@@ -715,6 +1050,72 @@ deduplicated issue list; ON-ERROR receives an error string."
     (setq my/jira--active-operation operation)
     operation))
 
+(defun my/jira--call-fetch-callback (callback argument label)
+  "Call CALLBACK with ARGUMENT, reporting callback errors using LABEL."
+  (when callback
+    (condition-case err
+        (funcall callback argument)
+      (error
+       (message "Jira explicit-fetch %s callback failed: %s"
+                label (error-message-string err))))))
+
+;;;###autoload
+(defun my/jira-fetch-issues (keys &optional on-success on-error)
+  "Asynchronously fetch the Jira issues identified by KEYS.
+
+KEYS must be a non-empty list of uppercase Jira issue-key strings. Duplicate
+keys are fetched once, and large lists are split according to
+`my/jira-key-batch-size'. Explicit fetches use only `key IN (...)' JQL, so they
+bypass the seed project, status, and age filters and do not expand one-hop
+relationships.
+
+Return a `my/jira-operation' handle immediately. After successful completion,
+its `my/jira-operation-issues' slot contains the same issue alists used by the
+refresh pipeline. With no ON-SUCCESS callback, write and index those issues as
+Org-roam nodes in non-blocking batches. When ON-SUCCESS is non-nil, perform no
+writes and call it with the issue alists instead. When ON-ERROR is non-nil, call
+it with a sanitized error string. Only one Jira operation may run at a time."
+  (let* ((normalized-keys (my/jira--normalize-explicit-keys keys))
+         (jobs (my/jira--explicit-fetch-jobs normalized-keys))
+         (operation (my/jira--start-operation 'explicit-fetch)))
+    (setf (my/jira-operation-phase operation) 'fetching-explicit-issues)
+    (message "Jira explicit fetch: requesting %d issue%s asynchronously..."
+             (length normalized-keys)
+             (if (= (length normalized-keys) 1) "" "s"))
+    (condition-case err
+        (my/jira--run-search-jobs-async
+         operation jobs nil 0 (length jobs)
+         (lambda (issues)
+           (when (my/jira--operation-live-p operation)
+             (let ((result (my/jira--deduplicate-issues issues)))
+               (setf (my/jira-operation-issues operation) result)
+               (if on-success
+                   (progn
+                     (setf (my/jira-operation-phase operation) 'completed)
+                     (my/jira--finish-operation
+                      operation
+                      (format "Fetched %d/%d explicit Jira issues"
+                              (length result) (length normalized-keys)))
+                     (my/jira--call-fetch-callback
+                      on-success result "success"))
+                 (setf (my/jira-operation-pending-issues operation)
+                       (copy-sequence result)
+                       (my/jira-operation-phase operation) 'writing-nodes)
+                 (message "Jira explicit fetch: writing %d node%s..."
+                          (length result)
+                          (if (= (length result) 1) "" "s"))
+                 (my/jira--schedule-write-batch operation)))))
+         (lambda (error-text)
+           (my/jira--fail-operation operation error-text)
+           (my/jira--call-fetch-callback on-error error-text "error")))
+      (quit
+       (my/jira-cancel))
+      (error
+       (let ((error-text (error-message-string err)))
+         (my/jira--fail-operation operation error-text)
+         (my/jira--call-fetch-callback on-error error-text "error"))))
+    operation))
+
 (defun my/jira--index-file (file)
   "Incrementally update Org-roam's database for FILE when configured."
   (when (and my/jira-index-written-nodes
@@ -747,21 +1148,44 @@ deduplicated issue list; ON-ERROR receives an error string."
                 (my/jira--index-file file))))
           (let ((written (length (my/jira-operation-written-files operation)))
                 (total (length (my/jira-operation-issues operation))))
-            (message "Jira refresh: wrote %d/%d nodes" written total))
+            (message "Jira %s: wrote %d/%d nodes"
+                     (if (eq (my/jira-operation-kind operation)
+                             'explicit-fetch)
+                         "explicit fetch"
+                       "refresh")
+                     written total))
           (if (my/jira-operation-pending-issues operation)
               (my/jira--schedule-write-batch operation)
-            (setf (my/jira-operation-phase operation) 'writing-dashboard)
-            (let ((dashboard
-                   (my/jira--write-dashboard
-                    (my/jira-operation-issues operation))))
-              (my/jira--index-file dashboard))
-            (let* ((count (length (my/jira-operation-written-files operation)))
-                   (elapsed (- (float-time)
-                               (my/jira-operation-started-at operation))))
-              (my/jira--finish-operation
-               operation
-               (format "Refreshed %d Jira nodes and dashboard in %.1fs"
-                       count elapsed)))))
+            (if (eq (my/jira-operation-kind operation) 'explicit-fetch)
+                (let ((count
+                       (length (my/jira-operation-written-files operation))))
+                  (setf (my/jira-operation-phase operation) 'completed)
+                  (my/jira--finish-operation
+                   operation
+                   (format "Fetched and imported %d explicit Jira node%s"
+                           count (if (= count 1) "" "s"))))
+              (setf (my/jira-operation-phase operation) 'writing-dashboard)
+              (let ((dashboard
+                     (my/jira--write-dashboard
+                      (my/jira-operation-issues operation))))
+                (my/jira--index-file dashboard))
+              (let* ((count
+                      (length (my/jira-operation-written-files operation)))
+                     (removed
+                      (when my/jira-cleanup-trash-nodes-after-refresh
+                        (my/jira-cleanup-trash-nodes t)))
+                     (elapsed (- (float-time)
+                                 (my/jira-operation-started-at operation))))
+                (my/jira--finish-operation
+                 operation
+                 (format "Refreshed %d Jira nodes and dashboard%s in %.1fs"
+                         count
+                         (if removed
+                             (format "; trashed %d stale Trash node%s"
+                                     (length removed)
+                                     (if (= (length removed) 1) "" "s"))
+                           "")
+                         elapsed))))))
       (quit
        (my/jira-cancel))
       (error
@@ -982,7 +1406,7 @@ issue summaries, descriptions, comments, or issue keys."
             (:key fields :path "/rest/api/2/field")
             (:key link-types :path "/rest/api/2/issueLinkType")
             (:key search :path "/rest/api/2/search"
-             :query (("jql" ,my/jira-seed-jql)
+             :query (("jql" ,(my/jira--seed-jql))
                      ("maxResults" "1")
                      ("fields" "issuetype,parent,issuelinks"))))))
     (message "Checking Jira connectivity and schema asynchronously...")

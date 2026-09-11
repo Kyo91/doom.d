@@ -6,7 +6,7 @@
 (map! :map org-mode-map
       [remap +org/insert-item-below] #'org-insert-heading-respect-content)
 
-(setq org-agenda-files '("~/agenda/")
+(setq org-agenda-files '("gtd.org" "todo.org" "ideas.org")
       org-refile-use-outline-path 'file
       org-outline-path-complete-in-steps nil)
 
@@ -43,6 +43,11 @@
                                  "* %U %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :heading "Notes" :prepend t)
                                 ("oc" "Project changelog" entry #'+org-capture-central-project-changelog-file
                                  "* %U %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :heading "Changelog" :prepend t))))
+
+;; Org Modern's third-level fold markers (⯈ and ⯆) are not present in Fira
+;; Code, so macOS renders them with a mismatched fallback font.
+(after! org-modern
+  (setq org-modern-fold-stars '(("▶" . "▼"))))
 
 ;; Org-roam
 (setq org-roam-directory "~/agenda/roam/"
@@ -147,3 +152,34 @@
 
 (map! :leader :desc "Find Org File" "o a f" #'my/org-find-file
       :leader :desc "Toggle todo buffer" "o t" #'my/toggle-org-todo-buffer)
+
+(defun my/push-notes-update (&optional message)
+  "Commit all changes in `org-directory' with MESSAGE, then pull and push.
+
+If pulling or pushing fails, open the repository's Magit status buffer so the
+failure can be resolved there."
+  (interactive)
+  (require 'magit)
+  (let ((default-directory (file-name-as-directory
+                            (expand-file-name org-directory)))
+        (previous-window-configuration (current-window-configuration)))
+    (unless message
+      (magit-status-setup-buffer default-directory)
+      (magit-refresh)
+      (condition-case err
+          (setq message (read-string "Commit message: "))
+        (quit
+         (set-window-configuration previous-window-configuration)
+         (signal (car err) (cdr err)))))
+    (when (string-empty-p (string-trim message))
+      (user-error "A commit message is required"))
+    (unless (zerop (magit-call-git "add" "--all"))
+      (user-error "Could not stage notes; see the Magit process buffer"))
+    (unless (zerop (magit-call-git "commit" "-m" message))
+      (user-error "Could not commit notes; see the Magit process buffer"))
+    (dolist (operation '("pull" "push"))
+      (unless (zerop (magit-call-git operation))
+        (magit-status-setup-buffer default-directory)
+        (user-error "Git %s failed; opened Magit status" operation)))
+    (set-window-configuration previous-window-configuration)
+    (message "Notes updated and pushed")))

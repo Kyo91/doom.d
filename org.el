@@ -144,11 +144,21 @@
   :side 'bottom :height 0.35 :select t :modeline t :quit nil :ttl nil)
 
 (defun my/org-find-file ()
-  "Find a file in the Org agenda directory."
+  "Find a non-archive file in the Org agenda directory."
   (interactive)
+  (require 'consult)
   (let ((default-directory (file-name-as-directory
-                            (expand-file-name org-directory))))
+                            (expand-file-name org-directory)))
+        (consult-find-args
+         (if (stringp consult-find-args)
+             (concat consult-find-args " -not -name *_archive")
+           (append consult-find-args '("-not" "-name" "*_archive")))))
     (call-interactively #'consult-find)))
+
+(after! consult
+  (consult-customize my/org-find-file
+    :preview-key 'any
+    :state (consult--file-preview)))
 
 (map! :leader :desc "Find Org File" "o a f" #'my/org-find-file
       :leader :desc "Toggle todo buffer" "o t" #'my/toggle-org-todo-buffer)

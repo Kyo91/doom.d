@@ -206,6 +206,69 @@
         (agent-shell-openai-make-authentication :api-key "")))
 
 (after! agent-shell
+  (defcustom my/agent-shell-profiles
+    '(("Codex (default, high)" . (codex "default" "High"))
+      ("Claude (default, high)" . (claude "default" "High")))
+    "Profiles offered by `my/agent-shell-start-new'.
+
+Each entry has the form (ALIAS . (PROVIDER MODEL THOUGHT-LEVEL)).
+PROVIDER is either `codex' or `claude'.  MODEL is a provider model ID,
+or \"default\" to use the provider default.  THOUGHT-LEVEL may be an
+advertised ID or its display name, matched case-insensitively."
+    :type '(alist :key-type string
+                  :value-type (list (choice (const codex) (const claude))
+                                    string
+                                    string))
+    :group 'agent-shell)
+
+  (defun my/agent-shell--thought-level-id (thought-level)
+    "Resolve THOUGHT-LEVEL to the ID advertised by the current shell."
+    (let* ((option (agent-shell--config-option-by-category
+                    (agent-shell--state) "thought_level"))
+           (values (map-elt option :options)))
+      (or (seq-some
+           (lambda (value)
+             (when (or (string-equal-ignore-case
+                        thought-level (map-elt value :value))
+                       (and (map-elt value :name)
+                            (string-equal-ignore-case
+                             thought-level (map-elt value :name))))
+               (map-elt value :value)))
+           values)
+          (downcase thought-level))))
+
+  (defun my/agent-shell-start-new ()
+    "Start a new agent shell using a profile from `my/agent-shell-profiles'."
+    (interactive)
+    (unless my/agent-shell-profiles
+      (user-error "No profiles configured in `my/agent-shell-profiles'"))
+    (let* ((alias (completing-read "Agent profile: "
+                                   my/agent-shell-profiles nil t))
+           (profile (cdr (assoc-string alias my/agent-shell-profiles)))
+           (provider (nth 0 profile))
+           (model (nth 1 profile))
+           (thought-level (nth 2 profile))
+           (config
+            (pcase provider
+              ('codex (agent-shell-openai-make-codex-config))
+              ('claude (agent-shell-anthropic-make-claude-code-config))
+              (_ (user-error "Unsupported agent-shell provider: %S" provider)))))
+      (unless (and (= (length profile) 3)
+                   (stringp model)
+                   (stringp thought-level))
+        (user-error "Invalid agent-shell profile: %S" profile))
+      (map-put! config :default-model-id
+                (if (string-equal-ignore-case model "default")
+                    (lambda () nil)
+                  (lambda () model)))
+      (map-put! config :default-config-options
+                (lambda ()
+                  `(("thought_level" .
+                     ,(my/agent-shell--thought-level-id thought-level)))))
+      (agent-shell--start :config config
+                          :session-strategy 'new
+                          :new-session t)))
+
   (defcustom *my/agent-shell-reviewer-model* "gpt-5.6-sol"
     "Model used by `my/agent-shell-start-review'."
     :type 'string

@@ -9,7 +9,8 @@
       ;; (:desc "elisp" :prefix "e"
       ;;   :desc "defun" :n "f" #'eval-defun)
       (:desc "apps" :prefix "A"
-       :desc "Calc" :n "c" #'calc))
+       :desc "New agent shell" :n "c" #'my/agent-shell-start-new
+       :desc "Calc" :n "C" #'calc))
 
 ;; Emacs style forwards/backwards in insert mode
 (map!

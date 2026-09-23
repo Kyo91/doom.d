@@ -8,18 +8,50 @@
 
 (setq org-agenda-files '("gtd.org" "todo.org" "ideas.org")
       org-refile-use-outline-path 'file
-      org-outline-path-complete-in-steps nil)
+      org-outline-path-complete-in-steps nil
+      org-agenda-custom-commands
+      '(("g" "Daily reminders"
+         ((agenda ""
+                  ((org-agenda-span 1)))
+          (todo ""
+                ((org-agenda-overriding-header "Unscheduled TODOs")
+                 (org-agenda-todo-ignore-scheduled 'all)
+                 (org-agenda-todo-ignore-deadlines 'all)
+                 (org-agenda-todo-ignore-with-date 'all)))))
+        ("h" "Home focus (exclude WORK)"
+         ((agenda ""
+                  ((org-agenda-span 1)))
+          (todo ""
+                ((org-agenda-overriding-header "Unscheduled TODOs")
+                 (org-agenda-todo-ignore-scheduled 'all)
+                 (org-agenda-todo-ignore-deadlines 'all)
+                 (org-agenda-todo-ignore-with-date 'all))))
+         ((org-agenda-tag-filter-preset '("-WORK"))))
+        ("w" "Work focus (WORK only)"
+         ((agenda ""
+                  ((org-agenda-span 1)))
+          (todo ""
+                ((org-agenda-overriding-header "Unscheduled TODOs")
+                 (org-agenda-todo-ignore-scheduled 'all)
+                 (org-agenda-todo-ignore-deadlines 'all)
+                 (org-agenda-todo-ignore-with-date 'all))))
+         ((org-agenda-tag-filter-preset '("+WORK"))))))
 
 (remove-hook 'org-mode-hook #'auto-fill-mode)
 
 (after! org
   (setq org-log-done 'time
+        org-todo-keywords '((sequence "TODO(t)" "PROJ(p)" "LOOP(l)" "STRT(s)"
+                             "WAIT(w)" "HOLD(h)" "DELE(D)" "IDEA(i)"
+                             "|" "DONE(d)" "KILL(k)" "REASSIGNED(r)")
+                            (sequence "[ ](T)" "[-](S)" "[?](W)" "|" "[X](D)")
+                            (sequence "|" "OKAY(o)" "YES(y)" "NO(n)"))
         my/org-capture-ideas-file (expand-file-name "ideas.org" org-directory)
         org-capture-templates '(("t" "Personal todo" entry (file+headline +org-capture-todo-file "Inbox")
                                  "* TODO %?\n:PROPERTIES:\n:CREATED:  %U\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("T" "Todo (no context)" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i \nCreated at: %T" :prepend t)
                                 ("d" "Daily todo" entry (file+headline +org-capture-todo-file "Dailies") "* TODO %?\n:PROPERTIES:\n:CREATED:  %U\n:END:\n%i" :prepend nil)
-                                ("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n:PROPERTIES:\n:CREATED:  %U\n:SOURCE:   %a\n:END:\n%i" :prepend t)
+                                ("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %? :WORK:\n:PROPERTIES:\n:CREATED:  %U\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("r" "Random Thoughts" entry (file+headline my/org-capture-ideas-file "Random")
                                  "* TODO %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("n" "Personal notes" entry (file+headline +org-capture-notes-file "Inbox")
@@ -57,7 +89,7 @@
                                     :unnarrowed t)
                                    ("w" "work" plain "%?"
                                     :target (file+head "work/%<%Y%m%d%H%M%S>-${slug}.org"
-                                                       "#+title: ${title}\n")
+                                                       "#+title: ${title}\n#+filetags: :WORK:\n")
                                     :unnarrowed t)
                                    ("q" "quote" plain "#+begin_quote\n%?\n#+end_quote"
                                     :target (file+head "work/%<%Y%m%d%H%M%S>-${slug}.org"
@@ -157,8 +189,8 @@
 
 (after! consult
   (consult-customize my/org-find-file
-    :preview-key 'any
-    :state (consult--file-preview)))
+                     :preview-key 'any
+                     :state (consult--file-preview)))
 
 (map! :leader :desc "Find Org File" "o a f" #'my/org-find-file
       :leader :desc "Toggle todo buffer" "o t" #'my/toggle-org-todo-buffer)
@@ -166,23 +198,27 @@
 (defun my/push-notes-update (&optional message)
   "Commit all changes in `org-directory' with MESSAGE, then pull and push.
 
+When MESSAGE is empty, use a timestamped \"Agenda Update\" message.
 If pulling or pushing fails, open the repository's Magit status buffer so the
 failure can be resolved there."
   (interactive)
   (require 'magit)
   (let ((default-directory (file-name-as-directory
                             (expand-file-name org-directory)))
+        (default-message (format-time-string
+                          "Agenda Update %Y-%m-%d %H:%M:%S"))
         (previous-window-configuration (current-window-configuration)))
     (unless message
       (magit-status-setup-buffer default-directory)
       (magit-refresh)
       (condition-case err
-          (setq message (read-string "Commit message: "))
+          (setq message (read-string "Commit message: " nil nil
+                                     default-message))
         (quit
          (set-window-configuration previous-window-configuration)
          (signal (car err) (cdr err)))))
     (when (string-empty-p (string-trim message))
-      (user-error "A commit message is required"))
+      (setq message default-message))
     (unless (zerop (magit-call-git "add" "--all"))
       (user-error "Could not stage notes; see the Magit process buffer"))
     (unless (zerop (magit-call-git "commit" "-m" message))

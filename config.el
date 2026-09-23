@@ -208,7 +208,9 @@
 (after! agent-shell
   (defcustom my/agent-shell-profiles
     '(("Codex (default, high)" . (codex "default" "High"))
-      ("Claude (default, high)" . (claude "default" "High")))
+      ("Codex Sol 6 (high)" . (codex "gpt-6-sol" "High"))
+      ("Codex Luna 6 (high)" . (codex "gpt-6-luna" "High"))
+      ("Claude (default, medium)" . (claude "default" "Medium")))
     "Profiles offered by `my/agent-shell-start-new'.
 
 Each entry has the form (ALIAS . (PROVIDER MODEL THOUGHT-LEVEL)).
@@ -216,9 +218,9 @@ PROVIDER is either `codex' or `claude'.  MODEL is a provider model ID,
 or \"default\" to use the provider default.  THOUGHT-LEVEL may be an
 advertised ID or its display name, matched case-insensitively."
     :type '(alist :key-type string
-                  :value-type (list (choice (const codex) (const claude))
-                                    string
-                                    string))
+            :value-type (list (choice (const codex) (const claude))
+                              string
+                              string))
     :group 'agent-shell)
 
   (defun my/agent-shell--thought-level-id (thought-level)

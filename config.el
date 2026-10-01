@@ -160,6 +160,14 @@
                                      projectile-root-top-down-recurring
                                      projectile-root-bottom-up))
 
+;; After switching projects (SPC p p), open magit-status for git repos instead
+;; of prompting for a file. Non-git projects fall back to the file picker.
+(setq +workspaces-switch-project-function
+      (lambda (dir)
+        (if (file-exists-p (expand-file-name ".git" dir))
+            (magit-status dir)
+          (doom-project-find-file dir))))
+
 (use-package! jsonnet-mode
   :defer t
   )
@@ -345,3 +353,5 @@ advertised ID or its display name, matched case-insensitively."
       :desc "Hyperbole menu" "h" #'hyperbole
       :desc "Action" "a" #'hkey-either
       :desc "Toggle Hyperbole mode" "m" #'hyperbole-mode)
+
+(setopt pilish-input-window-height 0.25)

@@ -69,3 +69,5 @@
 (package! agent-shell-dispatch :recipe (:host github :repo "cassandracomar/agent-shell-dispatch"))
 
 (package! hyperbole)
+
+(package! pilish)

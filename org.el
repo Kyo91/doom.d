@@ -6,7 +6,55 @@
 (map! :map org-mode-map
       [remap +org/insert-item-below] #'org-insert-heading-respect-content)
 
-(setq org-agenda-files '("gtd.org" "todo.org" "ideas.org")
+;; Questions for colleagues: TODO headlines tagged QUESTION (directly or via
+;; inheritance) plus a tag naming the person to ask, e.g. JKURTZ.
+(defvar my/org-question-tag "QUESTION"
+  "Tag marking a TODO headline as an open question.")
+
+(defvar my/org-question-ignored-tags '("QUESTION" "WORK")
+  "Tags that never identify the person a question is for.")
+
+(defun my/org-question-people ()
+  "Return the sorted person tags used on open questions in agenda files."
+  (let (people)
+    (org-map-entries
+     (lambda ()
+       (dolist (tag (org-get-tags))
+         (let ((tag (substring-no-properties tag)))
+           (unless (or (member tag my/org-question-ignored-tags)
+                       (member tag people))
+             (push tag people)))))
+     (concat "+" my/org-question-tag "/!")
+     'agenda)
+    (sort people #'string<)))
+
+(defun my/org-agenda-questions (&optional _match)
+  "Show open questions as a block agenda with one block per person tag.
+Questions without a person tag are listed in a final block."
+  (let* ((people (my/org-question-people))
+         (settings '((org-agenda-hide-tags-regexp
+                      (concat "\\`" (regexp-opt my/org-question-ignored-tags) "\\'"))))
+         (blocks
+          (append
+           (mapcar (lambda (person)
+                     `(tags-todo ,(concat "+" my/org-question-tag "+" person)
+                                 ((org-agenda-overriding-header
+                                   ,(format "Questions for %s" person)))))
+                   people)
+           `((tags-todo ,(concat "+" my/org-question-tag
+                                 (mapconcat (lambda (p) (concat "-" p)) people ""))
+                        ((org-agenda-overriding-header "Questions (no person tag)")))))))
+    (org-agenda-run-series "Open questions" (list blocks settings))
+    ;; Recompute the person blocks on `g' instead of replaying the old series,
+    ;; so newly added people show up after a refresh.
+    (when (buffer-live-p org-agenda-buffer)
+      (with-current-buffer org-agenda-buffer
+        (let ((inhibit-read-only t))
+          (add-text-properties (point-min) (point-max)
+                               '(org-series-redo-cmd (my/org-agenda-questions))))
+        (setq org-agenda-redo-command '(my/org-agenda-questions))))))
+
+(setq org-agenda-files '("gtd.org" "todo.org" "ideas.org" "questions.org")
       org-refile-use-outline-path 'file
       org-outline-path-complete-in-steps nil
       org-agenda-custom-commands
@@ -35,7 +83,8 @@
                  (org-agenda-todo-ignore-scheduled 'all)
                  (org-agenda-todo-ignore-deadlines 'all)
                  (org-agenda-todo-ignore-with-date 'all))))
-         ((org-agenda-tag-filter-preset '("+WORK"))))))
+         ((org-agenda-tag-filter-preset '("+WORK"))))
+        ("Q" "Open questions (by person)" my/org-agenda-questions)))
 
 (remove-hook 'org-mode-hook #'auto-fill-mode)
 
@@ -47,11 +96,14 @@
                             (sequence "[ ](T)" "[-](S)" "[?](W)" "|" "[X](D)")
                             (sequence "|" "OKAY(o)" "YES(y)" "NO(n)"))
         my/org-capture-ideas-file (expand-file-name "ideas.org" org-directory)
+        my/org-capture-questions-file (expand-file-name "questions.org" org-directory)
         org-capture-templates '(("t" "Personal todo" entry (file+headline +org-capture-todo-file "Inbox")
                                  "* TODO %?\n:PROPERTIES:\n:CREATED:  %U\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("T" "Todo (no context)" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %?\n %i \nCreated at: %T" :prepend t)
-                                ("d" "Daily todo" entry (file+headline +org-capture-todo-file "Dailies") "* TODO %?\n:PROPERTIES:\n:CREATED:  %U\n:END:\n%i" :prepend nil)
+                                ("d" "Daily todo" entry (file+headline +org-capture-todo-file "Dailies") "* TODO %? :WORK:\n:PROPERTIES:\n:CREATED:  %U\n:END:\n%i" :prepend nil)
                                 ("w" "Work todo" entry (file+headline +org-capture-todo-file "Inbox") "* TODO %? :WORK:\n:PROPERTIES:\n:CREATED:  %U\n:SOURCE:   %a\n:END:\n%i" :prepend t)
+                                ("Q" "Question" entry (file+headline my/org-capture-questions-file "Work Questions")
+                                 "* TODO %? %^g\n:PROPERTIES:\n:CREATED:  %U\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("r" "Random Thoughts" entry (file+headline my/org-capture-ideas-file "Random")
                                  "* TODO %?\n:PROPERTIES:\n:SOURCE:   %a\n:END:\n%i" :prepend t)
                                 ("n" "Personal notes" entry (file+headline +org-capture-notes-file "Inbox")

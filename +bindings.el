@@ -10,6 +10,7 @@
       ;;   :desc "defun" :n "f" #'eval-defun)
       (:desc "apps" :prefix "A"
        :desc "New agent shell" :n "c" #'my/agent-shell-start-new
+       :desc "Pi" :n "p" #'pilish
        :desc "Calc" :n "C" #'calc))
 
 ;; Emacs style forwards/backwards in insert mode

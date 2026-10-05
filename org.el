@@ -24,26 +24,33 @@
            (unless (or (member tag my/org-question-ignored-tags)
                        (member tag people))
              (push tag people)))))
-     (concat "+" my/org-question-tag "/!")
+     (concat "+" my/org-question-tag "/!-WAIT")
      'agenda)
     (sort people #'string<)))
 
 (defun my/org-agenda-questions (&optional _match)
   "Show open questions as a block agenda with one block per person tag.
-Questions without a person tag are listed in a final block."
+Questions without a person tag are listed after those, and questions
+in WAIT state (asked, awaiting an answer) follow.  Answered (DONE)
+questions are listed at the very end for reference."
   (let* ((people (my/org-question-people))
          (settings '((org-agenda-hide-tags-regexp
                       (concat "\\`" (regexp-opt my/org-question-ignored-tags) "\\'"))))
          (blocks
           (append
            (mapcar (lambda (person)
-                     `(tags-todo ,(concat "+" my/org-question-tag "+" person)
+                     `(tags-todo ,(concat "+" my/org-question-tag "+" person "/-WAIT")
                                  ((org-agenda-overriding-header
                                    ,(format "Questions for %s" person)))))
                    people)
            `((tags-todo ,(concat "+" my/org-question-tag
-                                 (mapconcat (lambda (p) (concat "-" p)) people ""))
-                        ((org-agenda-overriding-header "Questions (no person tag)")))))))
+                                 (mapconcat (lambda (p) (concat "-" p)) people "")
+                                 "/-WAIT")
+                        ((org-agenda-overriding-header "Questions (no person tag)")))
+             (tags-todo ,(concat "+" my/org-question-tag "/WAIT")
+                        ((org-agenda-overriding-header "Pending Questions")))
+             (tags ,(concat "+" my/org-question-tag "/DONE")
+                   ((org-agenda-overriding-header "Answered Questions")))))))
     (org-agenda-run-series "Open questions" (list blocks settings))
     ;; Recompute the person blocks on `g' instead of replaying the old series,
     ;; so newly added people show up after a refresh.
@@ -58,7 +65,7 @@ Questions without a person tag are listed in a final block."
       org-refile-use-outline-path 'file
       org-outline-path-complete-in-steps nil
       org-agenda-custom-commands
-      '(("g" "Daily reminders"
+      `(("g" "Daily reminders"
          ((agenda ""
                   ((org-agenda-span 1)))
           (todo ""
@@ -69,21 +76,35 @@ Questions without a person tag are listed in a final block."
         ("h" "Home focus (exclude WORK)"
          ((agenda ""
                   ((org-agenda-span 1)))
-          (todo ""
-                ((org-agenda-overriding-header "Unscheduled TODOs")
-                 (org-agenda-todo-ignore-scheduled 'all)
-                 (org-agenda-todo-ignore-deadlines 'all)
-                 (org-agenda-todo-ignore-with-date 'all))))
-         ((org-agenda-tag-filter-preset '("-WORK"))))
+          (tags-todo ,(concat "-" my/org-question-tag "/-WAIT")
+                     ((org-agenda-overriding-header "Unscheduled TODOs")
+                      (org-agenda-tags-todo-honor-ignore-options t)
+                      (org-agenda-todo-ignore-scheduled 'all)
+                      (org-agenda-todo-ignore-deadlines 'all)
+                      (org-agenda-todo-ignore-with-date 'all)))
+          (todo "WAIT"
+                ((org-agenda-overriding-header "Currently Blocked")))
+          (tags-todo ,(concat "+" my/org-question-tag "/-WAIT")
+                     ((org-agenda-overriding-header "Questions"))))
+         ((org-agenda-tag-filter-preset '("-WORK"))
+          (org-agenda-skip-function
+           '(org-agenda-skip-entry-if 'todo '("PROJ")))))
         ("w" "Work focus (WORK only)"
          ((agenda ""
                   ((org-agenda-span 1)))
-          (todo ""
-                ((org-agenda-overriding-header "Unscheduled TODOs")
-                 (org-agenda-todo-ignore-scheduled 'all)
-                 (org-agenda-todo-ignore-deadlines 'all)
-                 (org-agenda-todo-ignore-with-date 'all))))
-         ((org-agenda-tag-filter-preset '("+WORK"))))
+          (tags-todo ,(concat "-" my/org-question-tag "/-WAIT")
+                     ((org-agenda-overriding-header "Unscheduled TODOs")
+                      (org-agenda-tags-todo-honor-ignore-options t)
+                      (org-agenda-todo-ignore-scheduled 'all)
+                      (org-agenda-todo-ignore-deadlines 'all)
+                      (org-agenda-todo-ignore-with-date 'all)))
+          (todo "WAIT"
+                ((org-agenda-overriding-header "Currently Blocked")))
+          (tags-todo ,(concat "+" my/org-question-tag "/-WAIT")
+                     ((org-agenda-overriding-header "Questions"))))
+         ((org-agenda-tag-filter-preset '("+WORK"))
+          (org-agenda-skip-function
+           '(org-agenda-skip-entry-if 'todo '("PROJ")))))
         ("Q" "Open questions (by person)" my/org-agenda-questions)))
 
 (remove-hook 'org-mode-hook #'auto-fill-mode)

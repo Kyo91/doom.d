@@ -166,7 +166,7 @@ questions are listed at the very end for reference."
                                     :unnarrowed t)
                                    ("q" "quote" plain "#+begin_quote\n%?\n#+end_quote"
                                     :target (file+head "work/%<%Y%m%d%H%M%S>-${slug}.org"
-                                                       "#+title: ${title}\n")
+                                                       "#+title: ${title}\n#+filetags: :WORK:\n")
                                     :unnarrowed t)
                                    ("p" "placeholder" plain "Placeholder for ${title}"
                                     :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org"

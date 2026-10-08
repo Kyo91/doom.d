@@ -348,6 +348,26 @@ advertised ID or its display name, matched case-insensitively."
   (setq hyrolo-file-list (list "~/.rolo.org" org-directory hywiki-directory)
         hsys-org-enable-smart-keys t))
 
+;; HyRolo searches should include work-only notes regardless of the buffer
+;; from which the search is invoked.  Keep other Consult searches unchanged.
+(defun my/hyrolo-consult-include-gitignored (fn &rest args)
+  "Include Git-ignored and hidden files in HyRolo Consult searches."
+  (require 'consult)
+  (let ((consult-ripgrep-args
+         (if (listp consult-ripgrep-args)
+             (append consult-ripgrep-args
+                     '("--no-ignore-vcs" "--hidden"))
+           (concat consult-ripgrep-args
+                   " --no-ignore-vcs --hidden"))))
+    (apply fn args)))
+
+(after! hyrolo
+  (advice-add 'hyrolo-consult-grep :around
+              #'my/hyrolo-consult-include-gitignored)
+  (advice-add 'hyrolo-consult-fgrep :around
+              #'my/hyrolo-consult-include-gitignored))
+
+
 (map! :leader
       :prefix ("H" . "hyperbole")
       :desc "Hyperbole menu" "h" #'hyperbole
@@ -355,3 +375,19 @@ advertised ID or its display name, matched case-insensitively."
       :desc "Toggle Hyperbole mode" "m" #'hyperbole-mode)
 
 (setopt pilish-input-window-height 0.25)
+
+;; Include Git-ignored files when searching the agenda project, but leave
+;; other projects' ignore behavior unchanged.
+(defun my/agenda-search-include-gitignored (args)
+  "Add ripgrep's Git-ignore override to search ARGS for ~/agenda."
+  (let ((root (or (plist-get args :in)
+                  (doom-project-root)
+                  default-directory)))
+    (if (file-equal-p root (expand-file-name "~/agenda/"))
+        (plist-put (copy-sequence args) :args
+                   (append (plist-get args :args)
+                           '("--no-ignore-vcs")))
+      args)))
+
+(advice-add '+vertico-file-search :filter-args
+            #'my/agenda-search-include-gitignored)

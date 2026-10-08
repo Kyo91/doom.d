@@ -96,8 +96,11 @@ questions are listed at the very end for reference."
                      ((org-agenda-overriding-header "Unscheduled TODOs")
                       (org-agenda-tags-todo-honor-ignore-options t)
                       (org-agenda-todo-ignore-scheduled 'all)
-                      (org-agenda-todo-ignore-deadlines 'all)
-                      (org-agenda-todo-ignore-with-date 'all)))
+                      ;; Keep deadline-only TODOs here; still hide scheduled
+                      ;; and plain-timestamped ones.
+                      (org-agenda-todo-ignore-deadlines nil)
+                      (org-agenda-todo-ignore-timestamp 'all)
+                      (org-agenda-todo-ignore-with-date nil)))
           (todo "WAIT"
                 ((org-agenda-overriding-header "Currently Blocked")))
           (tags-todo ,(concat "+" my/org-question-tag "/-WAIT")

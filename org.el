@@ -71,8 +71,12 @@ questions are listed at the very end for reference."
           (todo ""
                 ((org-agenda-overriding-header "Unscheduled TODOs")
                  (org-agenda-todo-ignore-scheduled 'all)
-                 (org-agenda-todo-ignore-deadlines 'all)
-                 (org-agenda-todo-ignore-with-date 'all)))))
+                 ;; Keep deadline-only TODOs here until they come within
+                 ;; `org-deadline-warning-days' (then they show in the agenda
+                 ;; block above); still hide scheduled and plain-timestamped ones.
+                 (org-agenda-todo-ignore-deadlines 'near)
+                 (org-agenda-todo-ignore-timestamp 'all)
+                 (org-agenda-todo-ignore-with-date nil)))))
         ("h" "Home focus (exclude WORK)"
          ((agenda ""
                   ((org-agenda-span 1)))
@@ -80,8 +84,12 @@ questions are listed at the very end for reference."
                      ((org-agenda-overriding-header "Unscheduled TODOs")
                       (org-agenda-tags-todo-honor-ignore-options t)
                       (org-agenda-todo-ignore-scheduled 'all)
-                      (org-agenda-todo-ignore-deadlines 'all)
-                      (org-agenda-todo-ignore-with-date 'all)))
+                      ;; Keep deadline-only TODOs here until they come within
+                      ;; `org-deadline-warning-days' (then they show in the agenda
+                      ;; block above); still hide scheduled and plain-timestamped ones.
+                      (org-agenda-todo-ignore-deadlines 'near)
+                      (org-agenda-todo-ignore-timestamp 'all)
+                      (org-agenda-todo-ignore-with-date nil)))
           (todo "WAIT"
                 ((org-agenda-overriding-header "Currently Blocked")))
           (tags-todo ,(concat "+" my/org-question-tag "/-WAIT")
@@ -96,9 +104,10 @@ questions are listed at the very end for reference."
                      ((org-agenda-overriding-header "Unscheduled TODOs")
                       (org-agenda-tags-todo-honor-ignore-options t)
                       (org-agenda-todo-ignore-scheduled 'all)
-                      ;; Keep deadline-only TODOs here; still hide scheduled
-                      ;; and plain-timestamped ones.
-                      (org-agenda-todo-ignore-deadlines nil)
+                      ;; Keep deadline-only TODOs here until they come within
+                      ;; `org-deadline-warning-days' (then they show in the agenda
+                      ;; block above); still hide scheduled and plain-timestamped ones.
+                      (org-agenda-todo-ignore-deadlines 'near)
                       (org-agenda-todo-ignore-timestamp 'all)
                       (org-agenda-todo-ignore-with-date nil)))
           (todo "WAIT"

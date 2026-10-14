@@ -49,9 +49,9 @@
 (package! blacken)
 (package! protobuf-mode)
 
-(unpin! org-roam)
-(package! org-roam-ui)
-(package! consult-org-roam)
+(package! vulpea)
+(package! consult-vulpea)
+(package! vulpea-ui)
 
 (package! jsonnet-mode)
 

@@ -166,54 +166,225 @@ questions are listed at the very end for reference."
 (after! org-modern
   (setq org-modern-fold-stars '(("▶" . "▼"))))
 
-;; Org-roam
-(setq org-roam-directory "~/agenda/roam/"
-      org-roam-capture-templates '(("d" "default" plain "%?"
-                                    :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org"
-                                                       "#+title: ${title}\n")
-                                    :unnarrowed t)
-                                   ("w" "work" plain "%?"
-                                    :target (file+head "work/%<%Y%m%d%H%M%S>-${slug}.org"
-                                                       "#+title: ${title}\n#+filetags: :WORK:\n")
-                                    :unnarrowed t)
-                                   ("q" "quote" plain "#+begin_quote\n%?\n#+end_quote"
-                                    :target (file+head "work/%<%Y%m%d%H%M%S>-${slug}.org"
-                                                       "#+title: ${title}\n#+filetags: :WORK:\n")
-                                    :unnarrowed t)
-                                   ("p" "placeholder" plain "Placeholder for ${title}"
-                                    :target (file+head "%<%Y%m%d%H%M%S>-${slug}.org"
-                                                       "#+title: ${title}\n")
-                                    :immediate-finish t)))
+;; Vulpea (replaces org-roam)
+;;
+;; Notes still live in ~/agenda/roam/ and keep the org-roam on-disk format
+;; (ID property drawers, #+title, #+filetags, id: links), so switching back
+;; only means re-enabling `+roam'.  These must be set before vulpea loads:
+;; vulpea derives several defaults at load time.
+(defvar my/notes-directory (expand-file-name "~/agenda/roam/")
+  "Root of the vulpea note collection.")
 
-(after! org-roam
-  (setq org-roam-list-files-commands '(find fd fdfind rg)))
+(setq vulpea-db-sync-directories (list my/notes-directory)
+      vulpea-default-notes-directory my/notes-directory
+      vulpea-db-location (file-name-concat doom-profile-data-dir "vulpea.db")
+      ;; Existing notes use org-roam's alias property.
+      vulpea-buffer-alias-property "ROAM_ALIASES"
+      ;; Same file naming as the old org-roam templates.
+      vulpea-create-default-template '(:file-name "${timestamp}-${slug}.org")
+      vulpea-db-sync-verbose nil)
 
-(use-package! consult-org-roam
-  :after org-roam
+(defvar my/vulpea-templates
+  '((?d "default" :file-name "${timestamp}-${slug}.org")
+    (?w "work" :file-name "work/${timestamp}-${slug}.org" :tags ("WORK"))
+    (?q "quote" :file-name "work/${timestamp}-${slug}.org" :tags ("WORK")
+        :body "#+begin_quote\n%?\n#+end_quote")
+    (?p "placeholder" :file-name "${timestamp}-${slug}.org"
+        :body "Placeholder for ${title}" :visit nil))
+  "Note templates, ported from the old `org-roam-capture-templates'.
+Each entry is (KEY NAME . PLIST).  PLIST takes `vulpea-create's :file-name,
+:tags and :body, plus :visit (default t).  A \"%?\" in :body marks where
+point lands after the note is visited.")
+
+(defun my/vulpea--read-template ()
+  "Prompt for one of `my/vulpea-templates' and return it."
+  (if (cdr my/vulpea-templates)
+      (assq (car (read-multiple-choice
+                  "Template" (mapcar (lambda (tpl) (list (car tpl) (cadr tpl)))
+                                     my/vulpea-templates)))
+            my/vulpea-templates)
+    (car my/vulpea-templates)))
+
+(defun my/vulpea--create-from-template (title template)
+  "Create a note titled TITLE from TEMPLATE without visiting it."
+  (let ((plist (cddr template)))
+    (vulpea-create title (plist-get plist :file-name)
+                   :tags (plist-get plist :tags)
+                   :body (plist-get plist :body))))
+
+(defun my/vulpea--visit-new (note template)
+  "Visit freshly created NOTE, moving point to TEMPLATE's %? marker."
+  (find-file (vulpea-note-path note))
+  (goto-char (point-min))
+  (if (search-forward "%?" nil t)
+      (replace-match "")
+    (goto-char (point-max)))
+  (when (and (bound-and-true-p evil-local-mode)
+             (string-match-p "%\\?" (or (plist-get (cddr template) :body) "")))
+    (evil-insert-state)))
+
+(defun my/vulpea-create (&optional title template)
+  "Create a note titled TITLE from TEMPLATE, like `org-roam-capture'."
+  (interactive)
+  (require 'vulpea)
+  (let* ((title (or title (read-string "Title: ")))
+         (template (or template (my/vulpea--read-template)))
+         (note (my/vulpea--create-from-template title template)))
+    (when (plist-get (append (cddr template) '(:visit t)) :visit)
+      (my/vulpea--visit-new note template))
+    note))
+
+(defun my/vulpea-find-create (title &optional _props)
+  "Create TITLE via a template from `vulpea-find'.
+Returns nil because the note was already visited."
+  (my/vulpea-create title)
+  nil)
+
+(defun my/vulpea-insert-create (title &optional _props)
+  "Create TITLE via a template from `vulpea-insert' without leaving the buffer."
+  (let ((template (copy-tree (my/vulpea--read-template))))
+    ;; The note is never visited here, so drop the point marker.
+    (when-let ((body (plist-get (cddr template) :body)))
+      (setcdr (cdr template)
+              (plist-put (cddr template) :body (string-replace "%?" "" body))))
+    (my/vulpea--create-from-template title template)))
+
+(defun my/vulpea-find-ref ()
+  "Find a note by its ROAM_REFS, like `org-roam-ref-find'."
+  (interactive)
+  (require 'vulpea)
+  (let (candidates)
+    (dolist (note (vulpea-db-query-by-property-key "ROAM_REFS"))
+      (dolist (ref (split-string-and-unquote
+                    (or (cdr (assoc "ROAM_REFS" (vulpea-note-properties note))) "")))
+        (push (cons (format "%s  %s" ref
+                            (propertize (vulpea-note-title note) 'face 'shadow))
+                    note)
+              candidates)))
+    (unless candidates (user-error "No notes with ROAM_REFS"))
+    (vulpea-visit (cdr (assoc (completing-read "Ref: " candidates nil t)
+                              candidates)))))
+
+(defun my/vulpea-find-forward-link ()
+  "Select and visit a note linked from the current note."
+  (interactive)
+  (require 'vulpea)
+  (let* ((id (or (org-entry-get nil "ID" t)
+                 (user-error "Current location has no ID property")))
+         (ids (delete-dups
+               (seq-keep (lambda (link)
+                           (when (equal (plist-get link :type) "id")
+                             (plist-get link :dest)))
+                         (vulpea-db-query-links-from id))))
+         (notes (or (vulpea-db-query-by-ids ids)
+                    (user-error "No forward links"))))
+    (vulpea-visit (vulpea-select-from "Forward link" notes :require-match t))))
+
+(defun my/vulpea-random ()
+  "Visit a random file-level note, like `org-roam-node-random'."
+  (interactive)
+  (require 'vulpea)
+  (vulpea-visit (seq-random-elt (or (vulpea-db-query-by-level 0)
+                                    (user-error "No notes indexed yet")))))
+
+(defun my/vulpea-refile ()
+  "Refile the current subtree into a note, like `org-roam-refile'."
+  (interactive)
+  (require 'vulpea)
+  (let* ((note (vulpea-select "Refile to" :require-match t))
+         (pos (unless (zerop (vulpea-note-level note))
+                (cdr (org-id-find (vulpea-note-id note))))))
+    (org-refile nil nil (list (vulpea-note-title note)
+                              (vulpea-note-path note) nil pos))))
+
+(defun my/vulpea-note-buffer-h ()
+  "Set up buffers visiting files in `my/notes-directory'."
+  (when (and buffer-file-name
+             (not (bound-and-true-p vulpea-db--active-parse-method))
+             (file-in-directory-p buffer-file-name my/notes-directory))
+    ;; Same as Doom's +roam: links stored from notes use IDs.
+    (setq-local org-id-link-to-org-use-id 'create-if-interactive)
+    (vulpea-title-change-detection-mode +1)))
+
+(add-hook 'org-mode-hook #'my/vulpea-note-buffer-h)
+
+;; Bound below but not autoloaded upstream.
+(dolist (cmd '(vulpea-buffer-alias-add vulpea-buffer-alias-remove
+               vulpea-buffer-tags-add vulpea-buffer-tags-remove))
+  (autoload cmd "vulpea-buffer" nil t))
+(autoload 'vulpea-tags-batch-rename "vulpea-tags" nil t)
+
+(use-package! vulpea
+  :defer t
+  ;; Start the database/watchers on first input instead of blocking startup.
+  :after-call doom-first-input-hook
   :init
-  (consult-org-roam-mode 1)
-  :custom
-  (consult-org-roam-grep-func #'consult-ripgrep)
+  (setq vulpea-find-default-create-fn #'my/vulpea-find-create
+        vulpea-insert-default-note-fn #'my/vulpea-insert-create)
   :config
-  (map! :map org-mode-map
-        :localleader
-        :prefix ("m" . "org-roam")
-        :desc "Find node with Consult" "f" #'consult-org-roam-file-find
-        :desc "Show backlinks" "b" #'consult-org-roam-backlinks
-        :desc "Show forward links" "l" #'consult-org-roam-forward-links
-        :desc "Search Org-roam" "s" #'consult-org-roam-search))
+  (defadvice! my/vulpea-insert-after-point-a (fn &rest args)
+    "In evil normal state, insert the link after point, like Doom's roam advice."
+    :around #'vulpea-insert
+    (if (and (bound-and-true-p evil-local-mode)
+             (not (evil-insert-state-p))
+             (or (looking-at-p "[[:blank:]]") (evil-eolp)))
+        (evil-with-state 'insert
+          (unless (eolp) (forward-char))
+          (when (evil-eolp) (insert " "))
+          (apply fn args))
+      (apply fn args)))
+  (vulpea-db-autosync-mode +1))
 
-;; (use-package! websocket
-;;   :after org-roam)
+(use-package! consult-vulpea
+  ;; Must not be `:after consult' (see consult-vulpea README).
+  :after vulpea
+  :config
+  (consult-vulpea-mode 1)
+  (map! :map minibuffer-local-map
+        "C-<right>" #'consult-vulpea-go-to-next-backlink-overlay
+        "C-<left>"  #'consult-vulpea-go-to-previous-backlink-overlay))
 
-;; (use-package! org-roam-ui
-;;   :after org-roam
-;;   :hook (after-init . org-roam-ui-mode)
-;;   :config
-;;   (setq org-roam-ui-sync-theme t
-;;         org-roam-ui-follow t
-;;         org-roam-ui-update-on-save t
-;;         org-roam-ui-open-on-start t))
+(use-package! vulpea-ui
+  :defer t
+  :config
+  (setq vulpea-ui-sidebar-position 'right
+        vulpea-ui-sidebar-size 0.33))
+
+(map! :leader
+      (:prefix ("n r" . "notes (vulpea)")
+       :desc "Open random note"       "a" #'my/vulpea-random
+       :desc "Find backlink"          "b" #'vulpea-find-backlink
+       :desc "Doctor"                 "d" #'vulpea-doctor
+       :desc "Find note"              "f" #'vulpea-find
+       :desc "Find ref"               "F" #'my/vulpea-find-ref
+       :desc "Insert link"            "i" #'vulpea-insert
+       :desc "Find forward link"      "l" #'my/vulpea-find-forward-link
+       :desc "Move note file"         "m" #'vulpea-move-file
+       :desc "New note"               "n" #'my/vulpea-create
+       :desc "Propagate title change" "p" #'vulpea-propagate-title-change
+       :desc "Toggle sidebar"         "r" #'vulpea-ui-sidebar-toggle
+       :desc "Rename tag everywhere"  "R" #'vulpea-tags-batch-rename
+       :desc "Sync database"          "s" #'vulpea-db-sync-full-scan
+       :desc "Search notes"           "/" #'consult-vulpea-grep))
+
+(map! :map org-mode-map
+      :localleader
+      (:prefix ("m" . "notes (vulpea)")
+       :desc "Add alias"              "a" #'vulpea-buffer-alias-add
+       :desc "Remove alias"           "A" #'vulpea-buffer-alias-remove
+       :desc "Find backlink"          "b" #'vulpea-find-backlink
+       :desc "Find note"              "f" #'vulpea-find
+       :desc "Find ref"               "F" #'my/vulpea-find-ref
+       :desc "Insert link"            "i" #'vulpea-insert
+       :desc "Create ID"              "I" #'org-id-get-create
+       :desc "Find forward link"      "l" #'my/vulpea-find-forward-link
+       :desc "Toggle sidebar"         "m" #'vulpea-ui-sidebar-toggle
+       :desc "New note"               "n" #'my/vulpea-create
+       :desc "Refile to note"         "r" #'my/vulpea-refile
+       :desc "Search notes"           "s" #'consult-vulpea-grep
+       :desc "Add tag"                "t" #'vulpea-buffer-tags-add
+       :desc "Remove tag"             "T" #'vulpea-buffer-tags-remove
+       :desc "Split heading to note"  "x" #'vulpea-split-heading))
 
 (setq deft-directory "~/agenda/"
       deft-recursive t)
@@ -222,7 +393,7 @@ questions are listed at the very end for reference."
   :after agent-shell
   :config
   (setq agent-shell-org-transcript-directory
-        (expand-file-name "work/" org-roam-directory)))
+        (expand-file-name "work/" my/notes-directory)))
 
 (defun my/org-goto-last-daily-headline ()
   "Move point to the last headline in the `Dailies' subtree."

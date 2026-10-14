@@ -72,10 +72,10 @@ This does not limit one-hop context issues."
 (defcustom my/jira-node-directory
   (expand-file-name
    "work/jira/"
-   (if (boundp 'org-roam-directory)
-       org-roam-directory
+   (if (boundp 'my/notes-directory)
+       my/notes-directory
      "~/agenda/roam/"))
-  "Directory containing generated Jira Org-roam issue nodes."
+  "Directory containing generated Jira issue notes."
   :type 'directory
   :group 'my-jira)
 
@@ -94,8 +94,8 @@ The default is the Epic Link field reported by `my/jira-diagnose'."
 (defcustom my/jira-dashboard-file
   (expand-file-name
    "work/jira-dashboard.org"
-   (if (boundp 'org-roam-directory)
-       org-roam-directory
+   (if (boundp 'my/notes-directory)
+       my/notes-directory
      "~/agenda/roam/"))
   "Generated Org dashboard for Jira issues."
   :type 'file
@@ -117,7 +117,7 @@ The default is the Epic Link field reported by `my/jira-diagnose'."
   :group 'my-jira)
 
 (defcustom my/jira-index-written-nodes t
-  "When non-nil, incrementally update Org-roam after writing each node."
+  "When non-nil, incrementally update the vulpea database after each write."
   :type 'boolean
   :group 'my-jira)
 
@@ -642,7 +642,7 @@ list; ON-ERROR receives an error string."
   (my/jira--url (concat "/browse/" key)))
 
 (defun my/jira--node-file (key)
-  "Return the Org-roam filename for Jira KEY."
+  "Return the note filename for Jira KEY."
   (unless (my/jira--valid-key-p key)
     (error "Invalid Jira key: %S" key))
   (expand-file-name (concat key ".org") my/jira-node-directory))
@@ -671,7 +671,7 @@ list; ON-ERROR receives an error string."
         (my/jira--field-issue-key portfolio-parent))))
 
 (defun my/jira--render-node (issue &optional notes)
-  "Render ISSUE as an Org-roam node while retaining NOTES."
+  "Render ISSUE as a note while retaining NOTES."
   (let* ((key (my/jira--issue-key issue))
          (fields (alist-get 'fields issue))
          (summary (my/jira--single-line (alist-get 'summary fields)))
@@ -726,7 +726,7 @@ list; ON-ERROR receives an error string."
      (or notes "* Notes\n"))))
 
 (defun my/jira--write-node (issue)
-  "Write ISSUE to its Org-roam node, preserving its Notes subtree."
+  "Write ISSUE to its note, preserving its Notes subtree."
   (let* ((key (my/jira--issue-key issue))
          (file (my/jira--node-file key))
          (notes (my/jira--existing-notes file))
@@ -836,11 +836,12 @@ Return the list of files successfully moved to the system Trash."
                     (error-message-string err))))))
     (setq removed (nreverse removed)
           skipped (nreverse skipped))
-    (when (and removed (fboundp 'org-roam-db-sync))
+    (when (and removed (fboundp 'vulpea-db-sync-full-scan))
       (condition-case err
-          (org-roam-db-sync)
+          ;; A smart scan only drops deleted files and re-reads changed ones.
+          (vulpea-db-sync-full-scan)
         (error
-         (message "Jira cleanup: Org-roam sync failed: %s"
+         (message "Jira cleanup: vulpea sync failed: %s"
                   (error-message-string err)))))
     (if candidates
         (message "Jira cleanup: moved %d node%s to Trash%s"
@@ -1072,7 +1073,7 @@ relationships.
 Return a `my/jira-operation' handle immediately. After successful completion,
 its `my/jira-operation-issues' slot contains the same issue alists used by the
 refresh pipeline. With no ON-SUCCESS callback, write and index those issues as
-Org-roam nodes in non-blocking batches. When ON-SUCCESS is non-nil, perform no
+notes in non-blocking batches. When ON-SUCCESS is non-nil, perform no
 writes and call it with the issue alists instead. When ON-ERROR is non-nil, call
 it with a sanitized error string. Only one Jira operation may run at a time."
   (let* ((normalized-keys (my/jira--normalize-explicit-keys keys))
@@ -1117,13 +1118,15 @@ it with a sanitized error string. Only one Jira operation may run at a time."
     operation))
 
 (defun my/jira--index-file (file)
-  "Incrementally update Org-roam's database for FILE when configured."
+  "Queue FILE for vulpea indexing when configured.
+With `vulpea-db-autosync-mode' on, its watchers would see the write anyway;
+queueing here just makes the update immediate."
   (when (and my/jira-index-written-nodes
-             (fboundp 'org-roam-db-update-file))
+             (fboundp 'vulpea-db-sync-update-file))
     (condition-case err
-        (org-roam-db-update-file file)
+        (vulpea-db-sync-update-file file)
       (error
-       (message "Jira refresh: Org-roam could not index %s: %s"
+       (message "Jira refresh: vulpea could not index %s: %s"
                 (file-name-nondirectory file) (error-message-string err))))))
 
 (defun my/jira--schedule-write-batch (operation)
@@ -1193,7 +1196,7 @@ it with a sanitized error string. Only one Jira operation may run at a time."
 
 ;;;###autoload
 (defun my/jira-refresh ()
-  "Asynchronously refresh Jira Org-roam nodes and the dashboard.
+  "Asynchronously refresh Jira notes and the dashboard.
 
 The command returns immediately while paginated GET requests run in the
 background. No files are changed unless every required request succeeds.

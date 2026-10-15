@@ -350,41 +350,85 @@ Returns nil because the note was already visited."
   (setq vulpea-ui-sidebar-position 'right
         vulpea-ui-sidebar-size 0.33))
 
-(map! :leader
-      (:prefix ("n r" . "notes (vulpea)")
-       :desc "Open random note"       "a" #'my/vulpea-random
-       :desc "Find backlink"          "b" #'vulpea-find-backlink
-       :desc "Doctor"                 "d" #'vulpea-doctor
-       :desc "Find note"              "f" #'vulpea-find
-       :desc "Find ref"               "F" #'my/vulpea-find-ref
-       :desc "Insert link"            "i" #'vulpea-insert
-       :desc "Find forward link"      "l" #'my/vulpea-find-forward-link
-       :desc "Move note file"         "m" #'vulpea-move-file
-       :desc "New note"               "n" #'my/vulpea-create
-       :desc "Propagate title change" "p" #'vulpea-propagate-title-change
-       :desc "Toggle sidebar"         "r" #'vulpea-ui-sidebar-toggle
-       :desc "Rename tag everywhere"  "R" #'vulpea-tags-batch-rename
-       :desc "Sync database"          "s" #'vulpea-db-sync-full-scan
-       :desc "Search notes"           "/" #'consult-vulpea-grep))
+(use-package! embark-vulpea
+  :after (vulpea embark))
 
-(map! :map org-mode-map
-      :localleader
-      (:prefix ("m" . "notes (vulpea)")
-       :desc "Add alias"              "a" #'vulpea-buffer-alias-add
-       :desc "Remove alias"           "A" #'vulpea-buffer-alias-remove
-       :desc "Find backlink"          "b" #'vulpea-find-backlink
-       :desc "Find note"              "f" #'vulpea-find
-       :desc "Find ref"               "F" #'my/vulpea-find-ref
-       :desc "Insert link"            "i" #'vulpea-insert
-       :desc "Create ID"              "I" #'org-id-get-create
-       :desc "Find forward link"      "l" #'my/vulpea-find-forward-link
-       :desc "Toggle sidebar"         "m" #'vulpea-ui-sidebar-toggle
-       :desc "New note"               "n" #'my/vulpea-create
-       :desc "Refile to note"         "r" #'my/vulpea-refile
-       :desc "Search notes"           "s" #'consult-vulpea-grep
-       :desc "Add tag"                "t" #'vulpea-buffer-tags-add
-       :desc "Remove tag"             "T" #'vulpea-buffer-tags-remove
-       :desc "Split heading to note"  "x" #'vulpea-split-heading))
+;; Complete note titles/aliases to id: links as you type (bare words and [[).
+(use-package! vulpea-capf
+  :hook (org-mode . vulpea-capf-mode))
+
+;; MCP access to the note database for LLM tools.  Tools are registered per
+;; client connection by emacs-mcp-stdio.sh (--init-function=vulpea-mcp-enable
+;; --stop-function=vulpea-mcp-disable), not globally at startup.
+(use-package! mcp-server-lib
+  :commands (mcp-server-lib-install mcp-server-lib-describe-setup)
+  :init
+  (setq mcp-server-lib-install-directory
+        (file-name-concat doom-profile-data-dir "mcp/"))
+  :config
+  (require 'mcp-server-lib-commands)
+  (unless mcp-server-lib--running
+    (mcp-server-lib-start)))
+
+(use-package! vulpea-mcp
+  :commands (vulpea-mcp-enable vulpea-mcp-disable))
+
+;; ~/agenda/.gitignore excludes roam/work/, which rg and fd honor by default.
+(defun my/vulpea-search ()
+  "Search note contents, including Git-ignored work notes."
+  (interactive)
+  (require 'consult-vulpea)
+  (let ((consult-ripgrep-args
+         (if (listp consult-ripgrep-args)
+             (append consult-ripgrep-args '("--no-ignore-vcs"))
+           (concat consult-ripgrep-args " --no-ignore-vcs"))))
+    (consult-vulpea-grep)))
+
+(defun my/vulpea-find-file ()
+  "Find note files with fd previews, including Git-ignored work notes."
+  (interactive)
+  (require 'consult)
+  (let ((consult-fd-args
+         (if (listp consult-fd-args)
+             (append consult-fd-args '("--no-ignore-vcs"))
+           (concat consult-fd-args " --no-ignore-vcs"))))
+    (consult-fd my/notes-directory)))
+
+;; One keymap shared by SPC n v, SPC n r and localleader m, matching the
+;; personal config.  Work-only commands use keys the personal map leaves free
+;; (g/G stay reserved for the personal machine's vulpea-graph).
+(define-prefix-command 'my/vulpea-map)
+(map! :map my/vulpea-map
+      ;; Same as personal.
+      :desc "Find/create note"               "f" #'vulpea-find
+      :desc "Insert note link"               "i" #'vulpea-insert
+      :desc "New note (template chooser)"    "c" #'my/vulpea-create
+      :desc "Show backlinks"                 "b" #'vulpea-find-backlink
+      :desc "Show forward links"             "l" #'my/vulpea-find-forward-link
+      :desc "Search notes (including work)"  "s" #'my/vulpea-search
+      :desc "Find note file (including work)" "F" #'my/vulpea-find-file
+      :desc "Toggle note sidebar"            "u" #'vulpea-ui-sidebar-toggle
+      :desc "Note collection"                "a" #'vulpea-ui-collection
+      :desc "Rescan notes"                   "R" #'vulpea-db-sync-full-scan
+      :desc "Check Vulpea setup"             "h" #'vulpea-doctor
+      ;; Work-only.
+      :desc "Find note by ref"               "r" #'my/vulpea-find-ref
+      :desc "Open random note"               "o" #'my/vulpea-random
+      :desc "Refile subtree to note"         "w" #'my/vulpea-refile
+      :desc "Move note file"                 "m" #'vulpea-move-file
+      :desc "Propagate title change"         "p" #'vulpea-propagate-title-change
+      :desc "Split heading into note"        "x" #'vulpea-split-heading
+      :desc "Create ID"                      "I" #'org-id-get-create
+      :desc "Add alias (nickname)"           "n" #'vulpea-buffer-alias-add
+      :desc "Remove alias"                   "N" #'vulpea-buffer-alias-remove
+      :desc "Add tag"                        "t" #'vulpea-buffer-tags-add
+      :desc "Remove tag"                     "T" #'vulpea-buffer-tags-remove
+      :desc "Rename tag everywhere"          "e" #'vulpea-tags-batch-rename)
+(map! :leader
+      :desc "Vulpea" "n v" #'my/vulpea-map
+      :desc "Vulpea" "n r" #'my/vulpea-map)
+(map! :after org :map org-mode-map
+      :localleader :desc "Vulpea" "m" #'my/vulpea-map)
 
 (setq deft-directory "~/agenda/"
       deft-recursive t)

@@ -52,6 +52,15 @@
 (package! vulpea)
 (package! consult-vulpea)
 (package! vulpea-ui)
+(package! embark-vulpea
+  :recipe (:host github :repo "fabcontigiani/embark-vulpea"))
+(package! vulpea-capf
+  :recipe (:host github :repo "neonmei/vulpea-capf"))
+(package! mcp-server-lib
+  :recipe (:host github :repo "laurynas-biveinis/mcp-server-lib.el"
+           :files ("*.el" "emacs-mcp-stdio.sh")))
+(package! vulpea-mcp
+  :recipe (:type git :repo "https://codeberg.org/nicolas-graves/vulpea-mcp.git"))
 
 (package! jsonnet-mode)
 

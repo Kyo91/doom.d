@@ -148,11 +148,43 @@
 (after! scala-mode
   (setq scala-indent:use-javadoc-style nil))
 
+;; Metals 1.6.x throws UnsupportedOperationException (synchronously, outside
+;; its own error handler) whenever the client advertises
+;; workspace.semanticTokens.refreshSupport -- which Eglot does by default.
+;; That kills `initialized' and any command that triggers a refresh (e.g.
+;; build-import).  Use a dedicated server class that doesn't advertise it.
+(after! eglot
+  (defclass +scala-metals-server (eglot-lsp-server) ()
+    :documentation "Eglot server class for Metals.")
+
+  (cl-defmethod eglot-client-capabilities ((s +scala-metals-server))
+    (let* ((caps (cl-call-next-method))
+           (ws (plist-get caps :workspace)))
+      (plist-put caps :workspace
+                 (plist-put ws :semanticTokens '(:refreshSupport :json-false))))))
+
 (set-eglot-client! '(scala-mode scala-ts-mode)
-                   '("metals"
+                   '(+scala-metals-server
+                     "metals"
                      "-J-Dmetals.startMcpServer=true"
                      "-J-Dmetals.mcpClient=claude"
                      :initializationOptions (:isHttpEnabled t)))
+
+(defun +scala/metals-import-build ()
+  "Ask Metals to re-run the build import (bloopInstall for Gradle).
+Eglot equivalent of `lsp-metals-build-import'.  Run this when library
+go-to-definition breaks: it regenerates .bloop/*.json and re-downloads
+the -sources.jars Metals uses to jump into dependencies."
+  (interactive)
+  (let ((server (eglot--current-server-or-lose)))
+    (message "Metals: build import started (see .metals/metals.log)...")
+    (jsonrpc-async-request
+     server :workspace/executeCommand '(:command "build-import" :arguments [])
+     :timeout nil                       ; Gradle import can take minutes
+     :success-fn (lambda (_) (message "Metals: build import finished"))
+     :error-fn (lambda (err)
+                 (message "Metals: build import failed: %s"
+                          (plist-get err :message))))))
 
 (setq
  projectile-project-root-functions '(projectile-root-local
